@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MicroWatch Payment Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+              font-family: 'Google Sans', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            background: #fff;
+            width: 100%;
+            max-width: 500px;
+            padding: 40px 30px;
+            text-align: center;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        h1 { font-size: 24px; font-weight: 700; color: #222; margin-bottom: 25px; }
+
+        /* --- Payment View Styles --- */
+        .order-info { text-align: left; margin: 0 auto 20px; font-size: 15px; color: #555; line-height: 1.8; }
+        .order-info strong { color: #222; }
+        
+        .btn { padding: 12px 30px; border: none; border-radius: 6px; font-size: 16px; font-weight: 600; color: #fff; cursor: pointer; transition: opacity 0.2s; }
+        .btn:hover { opacity: 0.85; }
+        .btn-green { background-color: #4caf50; }
+        .btn-red { background-color: #e74c3c; }
+        .btn-blue { background-color: #4a90d9; }
+
+        .divider { height: 1px; background: #eee; margin: 25px 0; }
+        .section-title { font-size: 16px; font-weight: 600; color: #444; margin-bottom: 15px; }
+
+        .fault-label { display: block; text-align: left; max-width: 400px; margin: 10px auto; font-size: 14px; color: #555; cursor: pointer; }
+        .fault-label input[type="checkbox"] { margin-right: 8px; width: 16px; height: 16px; cursor: pointer; }
+
+        .log-box { background: #f9f9f9; border: 1px solid #eee; border-radius: 4px; padding: 15px; font-family: 'Courier New', monospace; font-size: 13px; height: 150px; overflow-y: auto; text-align: left; margin-top: 10px; }
+        .log-entry { margin-bottom: 6px; line-height: 1.5; }
+        .log-success { color: #27ae60; }
+        .log-error { color: #e74c3c; }
+        .log-info { color: #7f8c8d; }
+        .log-warning { color: #f39c12; }
+
+        /* --- PhonePe Style Result View Styles --- */
+        .result-container { display: none; flex-direction: column; align-items: center; justify-content: center; padding: 20px 0; }
+        
+        .icon-circle {
+            width: 90px; height: 90px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 20px;
+        }
+        .icon-circle.success { background-color: #e8f5e9; }
+        .icon-circle.error { background-color: #ffebee; }
+        
+        .icon-circle svg { width: 50px; height: 50px; }
+        .icon-circle.success svg { stroke: #4caf50; }
+        .icon-circle.error svg { stroke: #e74c3c; }
+
+        .result-title { font-size: 22px; font-weight: 700; margin-bottom: 10px; }
+        .result-title.success { color: #4caf50; }
+        .result-title.error { color: #e74c3c; }
+
+        .result-message { font-size: 15px; color: #555; margin-bottom: 25px; line-height: 1.5; }
+        .result-message.error { color: #c0392b; font-weight: 500; }
+
+        .txn-details { background: #f9f9f9; padding: 15px; border-radius: 6px; width: 100%; margin-bottom: 25px; text-align: left; font-size: 14px; }
+        .txn-details p { margin-bottom: 8px; display: flex; justify-content: space-between; }
+        .txn-details p:last-child { margin-bottom: 0; }
+        .txn-details span.label { color: #777; }
+        .txn-details span.value { font-weight: 600; color: #222; }
+
+        .btn-full { width: 100%; padding: 14px; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MicroWatch Payment</h1>
+
+        <!-- ================= PAYMENT VIEW ================= -->
+        <div id="payment-view">
+            <div class="order-info">
+                <p><strong>Item:</strong> Wireless Noise-Cancelling Headphones</p>
+                <p><strong>Amount:</strong> ₹4,999</p>
+            </div>
+
+            <button class="btn btn-green" onclick="makePayment()">Pay ₹4,999</button>
+
+            <div class="divider"></div>
+
+            <div class="section-title">⚠️ Fault Injection Panel</div>
+            <label class="fault-label">
+                <input type="checkbox" id="injectDelay" onchange="updateFaults()">
+                Simulate 5-Second Network/DB Delay
+            </label>
+            <label class="fault-label">
+                <input type="checkbox" id="injectError" onchange="updateFaults()">
+                Simulate Payment Gateway Crash (HTTP 503)
+            </label>
+
+            <div style="margin-top: 20px;">
+                <button class="btn btn-red" onclick="resetFaults()" style="font-size: 14px; padding: 8px 16px;">Reset Faults</button>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="section-title">📝 Application Logs</div>
+            <div id="consoleLogs" class="log-box"></div>
+        </div>
+
+        <!-- ================= RESULT VIEW (PhonePe Style) ================= -->
+        <div id="result-view" class="result-container">
+            <!-- Success State -->
+            <div id="success-state" style="display: none;">
+                <div class="icon-circle success">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </div>
+                <div class="result-title success">Payment Successful</div>
+                <div class="result-message">Your transaction has been processed.</div>
+                
+                <div class="txn-details">
+                    <p><span class="label">Amount Paid</span> <span class="value" id="success-amount">₹0</span></p>
+                    <p><span class="label">Transaction ID</span> <span class="value" id="success-txn">---</span></p>
+                </div>
+
+                <button class="btn btn-blue btn-full" onclick="goBack()">Done</button>
+            </div>
+
+            <!-- Error State -->
+            <div id="error-state" style="display: none;">
+                <div class="icon-circle error">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </div>
+                <div class="result-title error">Payment Failed</div>
+                <div class="result-message error" id="error-message">Something went wrong.</div>
+                
+                <div class="txn-details">
+                    <p><span class="label">Attempted Amount</span> <span class="value">₹4,999</span></p>
+                    <p><span class="label">Status</span> <span class="value" style="color: #e74c3c;">Declined / Error</span></p>
+                </div>
+
+                <button class="btn btn-red btn-full" onclick="goBack()">Try Again</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000';
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('consoleLogs');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${time}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        async function makePayment() {
+            log('Initiating payment request...', 'info');
+            
+            // Show a temporary loading state (optional, but good UX)
+            const payBtn = document.querySelector('#payment-view .btn-green');
+            const originalText = payBtn.textContent;
+            payBtn.textContent = 'Processing...';
+            payBtn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_URL}/api/pay`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount: 4999, itemName: 'Wireless Headphones' })
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    log(`✅ SUCCESS: Txn ${data.transactionId}`, 'success');
+                    showResult('success', data.amount, data.transactionId);
+                } else {
+                    log(`❌ FAILED: ${data.error}`, 'error');
+                    showResult('error', data.error);
+                }
+            } catch (err) {
+                log(`❌ NETWORK ERROR: ${err.message}`, 'error');
+                showResult('error', 'Network error: Could not reach server.');
+            } finally {
+                payBtn.textContent = originalText;
+                payBtn.disabled = false;
+            }
+        }
+
+        // Switch to the PhonePe-style result screen
+        function showResult(status, amountOrError, txnId = '') {
+            document.getElementById('payment-view').style.display = 'none';
+            document.getElementById('result-view').style.display = 'flex';
+
+            if (status === 'success') {
+                document.getElementById('success-state').style.display = 'block';
+                document.getElementById('error-state').style.display = 'none';
+                document.getElementById('success-amount').textContent = `${amountOrError.toLocaleString()}`;
+                document.getElementById('success-txn').textContent = txnId;
+            } else {
+                document.getElementById('success-state').style.display = 'none';
+                document.getElementById('error-state').style.display = 'block';
+                document.getElementById('error-message').textContent = amountOrError;
+            }
+        }
+
+        // Go back to the payment screen
+        function goBack() {
+            document.getElementById('result-view').style.display = 'none';
+            document.getElementById('payment-view').style.display = 'block';
+        }
+
+        async function updateFaults() {
+            const delay = document.getElementById('injectDelay').checked;
+            const error = document.getElementById('injectError').checked;
+
+            if (delay) {
+                await fetch(`${API_URL}/api/fault-inject`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'delay', enabled: true, delayMs: 5000 }) });
+                log('⚠️ Fault Injected: 5s Delay', 'warning');
+            } else {
+                await fetch(`${API_URL}/api/fault-inject`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'delay', enabled: false }) });
+            }
+
+            if (error) {
+                await fetch(`${API_URL}/api/fault-inject`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'error', enabled: true }) });
+                log('⚠️ Fault Injected: Gateway Crash', 'warning');
+            } else {
+                await fetch(`${API_URL}/api/fault-inject`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'error', enabled: false }) });
+            }
+        }
+
+        async function resetFaults() {
+            document.getElementById('injectDelay').checked = false;
+            document.getElementById('injectError').checked = false;
+            await fetch(`${API_URL}/api/fault-inject`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'reset' }) });
+            log('🔄 Faults Reset', 'success');
+        }
+
+        log('System initialized. Ready.', 'success');
+    </script>
+</body>
+</html>
