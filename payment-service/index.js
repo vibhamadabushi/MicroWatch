@@ -1,3 +1,5 @@
+require("./telemetry");
+
 const express = require("express");
 const cors = require("cors");
 const crypto = require("crypto");
@@ -35,7 +37,19 @@ app.post("/api/pay", async (req, res) => {
       error: "Payment Gateway Unavailable",
       transactionId,
     });
+
   }
+  // Add this at the top of your routes (after app.use(express.json()))
+app.get('/', (req, res) => {
+    res.json({ 
+        message: 'Payment Service is Running!',
+        endpoints: {
+            pay: 'POST /api/pay',
+            faultInject: 'POST /api/fault-inject',
+            health: 'GET /health'
+        }
+    });
+});
 
   // 2. NORMAL SUCCESSFUL FLOW (Simulates normal 200ms processing time)
   await new Promise((resolve) => setTimeout(resolve, 200));
