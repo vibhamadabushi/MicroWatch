@@ -4,6 +4,7 @@ const { getNodeAutoInstrumentations } = require("@opentelemetry/auto-instrumenta
 
 const exporter = new PrometheusExporter({
   port: 9464,
+  host: '0.0.0.0',
 });
 
 const sdk = new NodeSDK({
