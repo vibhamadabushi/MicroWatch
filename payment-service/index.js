@@ -16,6 +16,23 @@ let faultConfig = {
   errorCode: 503,
 };
 
+// ─── ROOT & HEALTH ENDPOINTS ───
+// MOVED OUTSIDE of the /api/pay route so it registers immediately on startup
+app.get("/", (req, res) => {
+  res.json({
+    message: "Payment Service is Running!",
+    endpoints: {
+      pay: "POST /api/pay",
+      faultInject: "POST /api/fault-inject",
+      health: "GET /health",
+    },
+  });
+});
+
+app.get("/health", (req, res) => {
+  res.json({ status: "UP" });
+});
+
 // ─── MAIN PAYMENT ENDPOINT ───
 app.post("/api/pay", async (req, res) => {
   const { amount, itemName } = req.body;
@@ -37,19 +54,7 @@ app.post("/api/pay", async (req, res) => {
       error: "Payment Gateway Unavailable",
       transactionId,
     });
-
   }
-  // Add this at the top of your routes (after app.use(express.json()))
-app.get('/', (req, res) => {
-    res.json({ 
-        message: 'Payment Service is Running!',
-        endpoints: {
-            pay: 'POST /api/pay',
-            faultInject: 'POST /api/fault-inject',
-            health: 'GET /health'
-        }
-    });
-});
 
   // 2. NORMAL SUCCESSFUL FLOW (Simulates normal 200ms processing time)
   await new Promise((resolve) => setTimeout(resolve, 200));
