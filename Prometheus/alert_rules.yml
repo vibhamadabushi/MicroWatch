@@ -1,0 +1,41 @@
+groups:
+  - name: microwatch-alerts
+    rules:
+
+      - alert: HighErrorRate
+        expr: |
+          100 *
+          sum(rate(http_server_request_duration_count{job="payment-service",http_response_status_code=~"5.."}[5m]))
+          /
+          sum(rate(http_server_request_duration_count{job="payment-service"}[5m]))
+          > 5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate in payment service"
+          description: "5xx error rate has exceeded 5% for 1 minute."
+
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(http_server_request_duration_bucket{job="payment-service"}[5m])
+            )
+          ) > 0.5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency in payment service"
+          description: "p95 latency has exceeded 500ms for 1 minute."
+
+      - alert: PaymentServiceDown
+        expr: up{job="payment-service"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Payment service is down"
+          description: "Prometheus cannot scrape the payment service."
