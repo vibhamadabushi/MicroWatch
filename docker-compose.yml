@@ -1,0 +1,178 @@
+services:
+  # ============================================================================
+  # Telemetry Infrastructure
+  # ============================================================================
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: microwatch-jaeger
+    ports:
+      - "16686:16686" # Jaeger Web UI
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - microwatch-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:16686 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  loki:
+    image: grafana/loki:latest
+    container_name: microwatch-loki
+    ports:
+      - "3100:3100" # Loki HTTP API
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
+    networks:
+      - microwatch-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: microwatch-prometheus
+    ports:
+      - "9090:9090" # Prometheus Web UI & API
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./Prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./Prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - microwatch-net
+    depends_on:
+      - jaeger
+
+  # ============================================================================
+  # Application Microservices
+  # ============================================================================
+  payment-service:
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+    container_name: microwatch-payment
+    ports:
+      - "3000:3000" # HTTP API
+      - "9464:9464" # Prometheus metrics
+    environment:
+      - PORT=3000
+      - PROMETHEUS_PORT=9464
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318/v1/traces
+      - LOKI_HOST=http://loki:3100
+    networks:
+      - microwatch-net
+    depends_on:
+      jaeger:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: microwatch-notification
+    ports:
+      - "3003:3003" # HTTP API
+      - "9467:9467" # Prometheus metrics
+    environment:
+      - PORT=3003
+      - PROMETHEUS_PORT=9467
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318/v1/traces
+      - LOKI_HOST=http://loki:3100
+    networks:
+      - microwatch-net
+    depends_on:
+      jaeger:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: microwatch-order
+    ports:
+      - "3002:3002" # HTTP API
+      - "9465:9465" # Prometheus metrics
+    environment:
+      - PORT=3002
+      - PROMETHEUS_PORT=9465
+      - PAYMENT_SERVICE_URL=http://payment-service:3000
+      - NOTIFICATION_SERVICE_URL=http://notification-service:3003
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318/v1/traces
+      - LOKI_HOST=http://loki:3100
+    networks:
+      - microwatch-net
+    depends_on:
+      payment-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: microwatch-gateway
+    ports:
+      - "8080:8080" # Gateway API
+      - "9466:9466" # Prometheus metrics
+    environment:
+      - PORT=8080
+      - PROMETHEUS_PORT=9466
+      - ORDER_SERVICE_URL=http://order-service:3002
+      - PAYMENT_SERVICE_URL=http://payment-service:3000
+      - NOTIFICATION_SERVICE_URL=http://notification-service:3003
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318/v1/traces
+      - LOKI_HOST=http://loki:3100
+    networks:
+      - microwatch-net
+    depends_on:
+      order-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: microwatch-dashboard
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_GATEWAY_URL=http://localhost:8080
+      - VITE_PROMETHEUS_URL=http://localhost:9090
+      - VITE_JAEGER_URL=http://localhost:16686
+      - VITE_LOKI_URL=http://localhost:3100
+    networks:
+      - microwatch-net
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+
+networks:
+  microwatch-net:
+    driver: bridge

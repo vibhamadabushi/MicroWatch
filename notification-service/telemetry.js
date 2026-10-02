@@ -7,17 +7,20 @@ const {
   OTLPTraceExporter,
 } = require("@opentelemetry/exporter-trace-otlp-http");
 const { resourceFromAttributes } = require("@opentelemetry/resources");
+
+const prometheusPort = parseInt(process.env.PROMETHEUS_PORT || "9467", 10);
+const otlpEndpoint =
+  process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "http://localhost:4318/v1/traces";
+
 const exporter = new PrometheusExporter({
-  port: parseInt(process.env.PROMETHEUS_PORT || "9464", 10),
+  port: prometheusPort,
   host: "0.0.0.0",
 });
 
 const sdk = new NodeSDK({
-  resource: resourceFromAttributes({ "service.name": "payment-service" }),
+  resource: resourceFromAttributes({ "service.name": "notification-service" }),
   traceExporter: new OTLPTraceExporter({
-    url:
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
-      "http://localhost:4318/v1/traces",
+    url: otlpEndpoint,
   }),
   metricReader: exporter,
   instrumentations: [getNodeAutoInstrumentations()],
@@ -25,5 +28,6 @@ const sdk = new NodeSDK({
 
 sdk.start();
 
-console.log("✅ OpenTelemetry started");
-console.log("📊 Metrics available at http://localhost:9464/metrics");
+console.log("✅ [notification-service] OpenTelemetry started");
+console.log(`📊 [notification-service] Metrics available at http://0.0.0.0:${prometheusPort}/metrics`);
+console.log(`📡 [notification-service] Traces exporting to ${otlpEndpoint}`);

@@ -107,7 +107,11 @@ app.post("/api/fault-inject", (req, res) => {
   });
 });
 
-const PORT = 3000;
+app.get("/api/fault-config", (req, res) => {
+  res.json(faultConfig);
+});
+
+const PORT = parseInt(process.env.PORT || "3000", 10);
 
 app.listen(PORT, () => {
   logger.info(

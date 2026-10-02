@@ -6,7 +6,7 @@ const logger = winston.createLogger({
     new winston.transports.Console(),
 
     new LokiTransport({
-      host: "http://localhost:3100",
+      host: process.env.LOKI_HOST || "http://localhost:3100",
       labels: {
         service: "payment-service",
       },

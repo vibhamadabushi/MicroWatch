@@ -1,0 +1,29 @@
+{
+  "name": "microwatch",
+  "version": "1.0.0",
+  "description": "Mini Observability Platform for Monitoring and Debugging Microservice-Based Applications",
+  "scripts": {
+    "start:payment": "node payment-service/index.js",
+    "start:order": "node order-service/index.js",
+    "start:notification": "node notification-service/index.js",
+    "start:gateway": "node api-gateway/index.js",
+    "start:dashboard": "npm --prefix dashboard run dev",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down",
+    "test:load": "node load-test.js",
+    "test:burst": "node load-test.js --burst",
+    "test:drill:payment-delay": "node load-test.js --drill payment-delay",
+    "test:drill:payment-error": "node load-test.js --drill payment-error",
+    "test:drill:order-db": "node load-test.js --drill order-db"
+  },
+  "keywords": [
+    "observability",
+    "opentelemetry",
+    "prometheus",
+    "jaeger",
+    "loki",
+    "microservices"
+  ],
+  "author": "MicroWatch Team",
+  "license": "MIT"
+}

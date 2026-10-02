@@ -1,41 +1,55 @@
 groups:
   - name: microwatch-alerts
     rules:
-
       - alert: HighErrorRate
         expr: |
           100 *
-          sum(rate(http_server_request_duration_count{job="payment-service",http_response_status_code=~"5.."}[5m]))
+          sum by (job) (rate(http_server_request_duration_count{http_response_status_code=~"5.."}[1m]))
           /
-          sum(rate(http_server_request_duration_count{job="payment-service"}[5m]))
+          sum by (job) (rate(http_server_request_duration_count[1m]))
           > 5
-        for: 1m
+        for: 15s
         labels:
           severity: critical
         annotations:
-          summary: "High error rate in payment service"
-          description: "5xx error rate has exceeded 5% for 1 minute."
+          summary: "High error rate on {{ $labels.job }}"
+          description: "5xx error rate has exceeded 5% for 15 seconds on service {{ $labels.job }}."
 
       - alert: HighLatency
         expr: |
           histogram_quantile(
             0.95,
-            sum by (le) (
-              rate(http_server_request_duration_bucket{job="payment-service"}[5m])
+            sum by (job, le) (
+              rate(http_server_request_duration_bucket[1m])
             )
           ) > 0.5
-        for: 1m
+        for: 15s
         labels:
           severity: warning
         annotations:
-          summary: "High latency in payment service"
-          description: "p95 latency has exceeded 500ms for 1 minute."
+          summary: "High p95 latency on {{ $labels.job }}"
+          description: "p95 latency has exceeded 500ms for 15 seconds on service {{ $labels.job }}."
 
-      - alert: PaymentServiceDown
-        expr: up{job="payment-service"} == 0
-        for: 30s
+      - alert: ServiceDown
+        expr: up == 0
+        for: 15s
         labels:
           severity: critical
         annotations:
-          summary: "Payment service is down"
-          description: "Prometheus cannot scrape the payment service."
+          summary: "Service instance {{ $labels.job }} is down"
+          description: "Prometheus cannot scrape endpoint {{ $labels.instance }} for service {{ $labels.job }}."
+
+      - alert: SlowOrderCheckouts
+        expr: |
+          histogram_quantile(
+            0.90,
+            sum by (le) (
+              rate(http_server_request_duration_bucket{job="order-service"}[1m])
+            )
+          ) > 2.0
+        for: 15s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Order checkout pipeline severely degraded"
+          description: "Order checkout transactions taking > 2 seconds to complete."
