@@ -74,7 +74,7 @@ export const FaultInjectionPanel: React.FC<FaultInjectionPanelProps> = ({
                 <CreditCard className="w-3.5 h-3.5" />
               </div>
               <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                Payment Service (:3000 / :8002)
+                Payment Service (:8002) - Active Microservice
               </span>
             </div>
             {(activeFaults["payment-delay"] || activeFaults["payment-error"]) && (

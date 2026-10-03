@@ -32,23 +32,9 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   const getNodeMetrics = (name: ServiceName) => {
     const s = services.find((x) => x.name === name);
     return {
-      latency: s?.latencyMs || 25,
-      port:
-        name === "api-gateway"
-          ? 8080
-          : name === "order-service"
-          ? 3002
-          : name === "payment-service"
-          ? 3000
-          : 3003,
-      metricsPort:
-        name === "api-gateway"
-          ? 9466
-          : name === "order-service"
-          ? 9465
-          : name === "payment-service"
-          ? 9464
-          : 9467,
+      latency: s?.latencyMs || 15,
+      port: name === "payment-service" ? 8002 : "-",
+      metricsPort: name === "payment-service" ? 8002 : "-",
     };
   };
 
@@ -67,32 +53,32 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
 
   const nodes = [
     {
+      id: "payment-service" as ServiceName,
+      label: "Payment Service",
+      sublabel: "Primary Active Service (:8002)",
+      x: 300,
+      y: 90,
+    },
+    {
       id: "api-gateway" as ServiceName,
       label: "API Gateway",
-      sublabel: "Ingress Router (:8080)",
-      x: 300,
-      y: 50,
+      sublabel: "Decommissioned (Streamlined)",
+      x: 135,
+      y: 280,
     },
     {
       id: "order-service" as ServiceName,
       label: "Order Service",
-      sublabel: "Coordinator (:3002)",
+      sublabel: "Decommissioned (Streamlined)",
       x: 300,
-      y: 175,
-    },
-    {
-      id: "payment-service" as ServiceName,
-      label: "Payment Service",
-      sublabel: "Settlement (:3000)",
-      x: 135,
-      y: 305,
+      y: 280,
     },
     {
       id: "notification-service" as ServiceName,
       label: "Notification Service",
-      sublabel: "Queue & Dispatch (:3003)",
+      sublabel: "Decommissioned (Streamlined)",
       x: 465,
-      y: 305,
+      y: 280,
     },
   ];
 

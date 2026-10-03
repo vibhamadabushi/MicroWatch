@@ -38,18 +38,3 @@ groups:
         annotations:
           summary: "Service instance {{ $labels.job }} is down"
           description: "Prometheus cannot scrape endpoint {{ $labels.instance }} for service {{ $labels.job }}."
-
-      - alert: SlowOrderCheckouts
-        expr: |
-          histogram_quantile(
-            0.90,
-            sum by (le) (
-              rate(http_server_request_duration_bucket{job="order-service"}[1m])
-            )
-          ) > 2.0
-        for: 15s
-        labels:
-          severity: critical
-        annotations:
-          summary: "Order checkout pipeline severely degraded"
-          description: "Order checkout transactions taking > 2 seconds to complete."

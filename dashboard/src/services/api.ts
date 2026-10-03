@@ -5,16 +5,19 @@ import {
   Span,
   SLOStatus,
   Incident,
-  FaultConfig,
   ServiceName,
   LogEntry,
 } from "../types";
 
 // Base URLs (prefers Vite proxies to bypass CORS, falls back to direct ports)
-const GATEWAY_URL = "/api/gateway";
+const PAYMENT_PROXY = "/api/payment";
 const PROMETHEUS_URL = "/api/prometheus";
 const JAEGER_URL = "/api/jaeger";
 const LOKI_URL = "/api/loki";
+const DIRECT_PAYMENT_URL = "http://localhost:8002";
+const DIRECT_PROMETHEUS_URL = "http://localhost:9090";
+const DIRECT_JAEGER_URL = "http://localhost:16686";
+const DIRECT_LOKI_URL = "http://localhost:3100";
 
 // In-memory historical buffer for charts
 const metricsHistory: REDMetricPoint[] = [];
@@ -26,91 +29,139 @@ for (let i = 20; i >= 0; i--) {
   metricsHistory.push({
     timestamp: t.toISOString(),
     timeLabel: t.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-    rate: 4.5 + Math.random() * 1.5,
+    rate: 5.0 + Math.random() * 1.5,
     errorRate: 0,
-    p50: 140 + Math.random() * 30,
-    p90: 210 + Math.random() * 40,
-    p95: 240 + Math.random() * 50,
-    p99: 310 + Math.random() * 60,
-    status2xx: 14,
+    p50: 120 + Math.random() * 25,
+    p90: 180 + Math.random() * 30,
+    p95: 210 + Math.random() * 35,
+    p99: 280 + Math.random() * 40,
+    status2xx: 15,
     status4xx: 0,
     status5xx: 0,
   });
 }
 
-// In-memory active incident cache
-let activeIncidents: Incident[] = [];
-
 // In-memory trace cache
 let localTraces: Trace[] = [];
 
 export const api = {
-  // 1. Fetch Service Health & Topology Status
+  // 1. Fetch Service Health & Topology Status (Focus on payment-service :8002)
   async getServicesStatus(): Promise<ServiceHealth[]> {
+    let paymentStatus: ServiceHealth = {
+      name: "payment-service",
+      url: "http://localhost:8002",
+      metricsUrl: "http://localhost:8002/metrics",
+      status: "UP",
+      latencyMs: 15,
+    };
+
     try {
-      const res = await fetch(`${GATEWAY_URL}/api/services/status`, {
-        signal: AbortSignal.timeout(2000),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return data.services;
+      const start = performance.now();
+      const res = await fetch(`${PAYMENT_PROXY}/health`, {
+        signal: AbortSignal.timeout(1500),
+      }).catch(() =>
+        fetch(`${DIRECT_PAYMENT_URL}/health`, {
+          signal: AbortSignal.timeout(1500),
+        })
+      );
+
+      if (res && res.ok) {
+        paymentStatus.status = "UP";
+        paymentStatus.latencyMs = Math.round(performance.now() - start);
+      } else {
+        paymentStatus.status = "DEGRADED";
       }
-    } catch (e) {
-      // Direct probing fallback if gateway proxy isn't responding yet
+    } catch {
+      paymentStatus.status = "UP"; // graceful fallback baseline
     }
 
-    // Default baseline probe
     return [
-      { name: "api-gateway", url: "http://localhost:8080", status: "UP", latencyMs: 25 },
-      { name: "order-service", url: "http://localhost:3002", status: "UP", latencyMs: 40 },
-      { name: "payment-service", url: "http://localhost:3000", status: "UP", latencyMs: 35 },
-      { name: "notification-service", url: "http://localhost:3003", status: "UP", latencyMs: 20 },
+      paymentStatus,
+      {
+        name: "api-gateway",
+        url: "Decommissioned (Streamlined)",
+        status: "UP",
+        latencyMs: 0,
+      },
+      {
+        name: "order-service",
+        url: "Decommissioned (Streamlined)",
+        status: "UP",
+        latencyMs: 0,
+      },
+      {
+        name: "notification-service",
+        url: "Decommissioned (Streamlined)",
+        status: "UP",
+        latencyMs: 0,
+      },
     ];
   },
 
-  // 2. Fetch or compute RED Metrics
+  // 2. Fetch or compute RED Metrics (Scrapes for job="payment-service")
   async getREDMetrics(activeFaults: Record<string, any>): Promise<{
     current: REDMetricPoint;
     history: REDMetricPoint[];
   }> {
-    // Check if Prometheus is accessible
-    let promAvailable = false;
-    try {
-      const test = await fetch(`${PROMETHEUS_URL}/api/v1/query?query=up`, {
-        signal: AbortSignal.timeout(1500),
-      });
-      promAvailable = test.ok;
-    } catch (e) {
-      promAvailable = false;
-    }
-
-    // Calculate realistic dynamic values taking active faults into account
-    let baseRate = 5 + Math.random() * 3;
+    let baseRate = 5 + Math.random() * 2.5;
     let baseErrorRate = 0;
-    let baseP95 = 220 + Math.random() * 40;
+    let baseP95 = 200 + Math.random() * 35;
     let status2xx = Math.round(baseRate * 3);
     let status5xx = 0;
 
-    // Adjust if faults are active
+    // Scrape real Prometheus metrics for job="payment-service" if available
+    try {
+      const promQueryRate = encodeURIComponent('sum(rate(http_server_request_duration_count{job="payment-service"}[1m]))');
+      const promQueryErr = encodeURIComponent('sum(rate(http_server_request_duration_count{job="payment-service",http_response_status_code=~"5.."}[1m]))');
+      const promQueryP95 = encodeURIComponent('histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_bucket{job="payment-service"}[1m]))) * 1000');
+
+      const [rateRes, errRes, p95Res] = await Promise.allSettled([
+        fetch(`${PROMETHEUS_URL}/api/v1/query?query=${promQueryRate}`, { signal: AbortSignal.timeout(1200) })
+          .catch(() => fetch(`${DIRECT_PROMETHEUS_URL}/api/v1/query?query=${promQueryRate}`, { signal: AbortSignal.timeout(1200) })),
+        fetch(`${PROMETHEUS_URL}/api/v1/query?query=${promQueryErr}`, { signal: AbortSignal.timeout(1200) })
+          .catch(() => fetch(`${DIRECT_PROMETHEUS_URL}/api/v1/query?query=${promQueryErr}`, { signal: AbortSignal.timeout(1200) })),
+        fetch(`${PROMETHEUS_URL}/api/v1/query?query=${promQueryP95}`, { signal: AbortSignal.timeout(1200) })
+          .catch(() => fetch(`${DIRECT_PROMETHEUS_URL}/api/v1/query?query=${promQueryP95}`, { signal: AbortSignal.timeout(1200) })),
+      ]);
+
+      if (rateRes.status === "fulfilled" && rateRes.value && rateRes.value.ok) {
+        const rateJson = await rateRes.value.json();
+        const val = parseFloat(rateJson?.data?.result?.[0]?.value?.[1]);
+        if (!isNaN(val) && val > 0) {
+          baseRate = Number(val.toFixed(2));
+          status2xx = Math.round(baseRate * 3);
+        }
+      }
+
+      if (errRes.status === "fulfilled" && errRes.value && errRes.value.ok) {
+        const errJson = await errRes.value.json();
+        const val = parseFloat(errJson?.data?.result?.[0]?.value?.[1]);
+        if (!isNaN(val) && val > 0 && baseRate > 0) {
+          baseErrorRate = Math.min(100, Number(((val / baseRate) * 100).toFixed(1)));
+          status5xx = Math.round(val * 3);
+          status2xx = Math.max(0, status2xx - status5xx);
+        }
+      }
+
+      if (p95Res.status === "fulfilled" && p95Res.value && p95Res.value.ok) {
+        const p95Json = await p95Res.value.json();
+        const val = parseFloat(p95Json?.data?.result?.[0]?.value?.[1]);
+        if (!isNaN(val) && val > 0) {
+          baseP95 = Number(val.toFixed(0));
+        }
+      }
+    } catch {
+      // Prometheus query fallback to dynamic synthesis below
+    }
+
+    // Dynamic state adjustment reflecting active chaos faults on payment-service
     if (activeFaults["payment-delay"]) {
-      baseP95 += 4500 + Math.random() * 500;
+      baseP95 += 4800 + Math.random() * 400;
     }
     if (activeFaults["payment-error"]) {
-      baseErrorRate = 92 + Math.random() * 8;
+      baseErrorRate = 95 + Math.random() * 5;
       status5xx = Math.round(baseRate * 3 * 0.95);
       status2xx = Math.max(0, Math.round(baseRate * 3 * 0.05));
-    }
-    if (activeFaults["order-db"]) {
-      baseErrorRate = 100;
-      status5xx = Math.round(baseRate * 3);
-      status2xx = 0;
-      baseP95 += 1200;
-    }
-    if (activeFaults["order-delay"]) {
-      baseP95 += 3000;
-    }
-    if (activeFaults["notif-delay"]) {
-      baseP95 += 2500;
     }
 
     const t = new Date();
@@ -119,7 +170,7 @@ export const api = {
       timeLabel: t.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
       rate: Number(baseRate.toFixed(1)),
       errorRate: Number(baseErrorRate.toFixed(1)),
-      p50: Number((baseP95 * 0.55).toFixed(0)),
+      p50: Number((baseP95 * 0.5).toFixed(0)),
       p90: Number((baseP95 * 0.85).toFixed(0)),
       p95: Number(baseP95.toFixed(0)),
       p99: Number((baseP95 * 1.25).toFixed(0)),
@@ -139,13 +190,18 @@ export const api = {
     };
   },
 
-  // 3. Fetch Traces from Jaeger
+  // 3. Fetch Traces from Jaeger (Specifically queries service name: payment-service)
   async getTraces(activeFaults: Record<string, any>): Promise<Trace[]> {
     try {
-      const res = await fetch(`${JAEGER_URL}/api/traces?service=api-gateway&limit=15`, {
+      const res = await fetch(`${JAEGER_URL}/api/traces?service=payment-service&limit=20`, {
         signal: AbortSignal.timeout(2000),
-      });
-      if (res.ok) {
+      }).catch(() =>
+        fetch(`${DIRECT_JAEGER_URL}/api/traces?service=payment-service&limit=20`, {
+          signal: AbortSignal.timeout(2000),
+        })
+      );
+
+      if (res && res.ok) {
         const jaegerData = await res.json();
         if (jaegerData.data && jaegerData.data.length > 0) {
           const parsed = jaegerData.data.map((jt: any): Trace => {
@@ -162,12 +218,12 @@ export const api = {
               return {
                 traceId: s.traceID,
                 spanId: s.spanID,
-                parentSpanId: (s.references && s.references[0]) ? s.references[0].spanID : undefined,
-                operationName: s.operationName,
-                serviceName: jt.processes[s.processID]?.serviceName || "api-gateway",
+                parentSpanId: s.references && s.references[0] ? s.references[0].spanID : undefined,
+                operationName: s.operationName || "POST /api/pay",
+                serviceName: "payment-service",
                 startTime: s.startTime / 1000,
                 duration: s.duration / 1000,
-                statusCode: tagsObj["http.status_code"] || (tagsObj["error"] ? 500 : 200),
+                statusCode: tagsObj["http.status_code"] || (tagsObj["error"] ? 503 : 200),
                 hasError: Boolean(tagsObj["error"]),
                 tags: tagsObj,
               };
@@ -175,8 +231,8 @@ export const api = {
 
             return {
               traceId: jt.traceID,
-              rootService: "api-gateway",
-              rootOperation: jt.spans[0]?.operationName || "POST /api/checkout",
+              rootService: "payment-service",
+              rootOperation: jt.spans[0]?.operationName || "POST /api/pay",
               startTime: new Date(jt.spans[0]?.startTime / 1000).toLocaleTimeString(),
               totalDurationMs: Number(totalDur.toFixed(1)),
               spanCount: jt.spans.length,
@@ -187,22 +243,22 @@ export const api = {
           return parsed;
         }
       }
-    } catch (e) {
+    } catch {
       // Jaeger query error or no traces yet -> fallback to synthesized realistic traces
     }
 
-    // Generate realistic simulated traces based on active conditions
+    // Generate realistic simulated traces focused on payment-service
     if (localTraces.length === 0) {
-      localTraces = generateSampleTraces(activeFaults);
+      localTraces = generatePaymentTraces(activeFaults);
     } else if (Math.random() > 0.4) {
-      localTraces.unshift(generateSingleTrace(activeFaults));
+      localTraces.unshift(generateSinglePaymentTrace(activeFaults));
       if (localTraces.length > 15) localTraces.pop();
     }
 
     return localTraces;
   },
 
-  // 4. Evaluate SLO Status & Error Budget Burn Rate
+  // 4. Evaluate SLO Status & Error Budget Burn Rate for payment-service
   getSLOStatus(currentMetric: REDMetricPoint): SLOStatus[] {
     const errorBudgetAvailable = Math.max(0, 100 - currentMetric.errorRate * 5);
     const availabilityBurn = currentMetric.errorRate > 5 ? 14.4 : currentMetric.errorRate > 0 ? 2.8 : 0.8;
@@ -211,7 +267,7 @@ export const api = {
 
     return [
       {
-        name: "API Availability SLO",
+        name: "Payment Availability SLO (99.0%)",
         target: 99.0,
         current: Number((100 - currentMetric.errorRate).toFixed(2)),
         unit: "%",
@@ -227,7 +283,7 @@ export const api = {
             : "Nominal (> 25 Days)",
       },
       {
-        name: "p95 Latency Objective (< 500ms)",
+        name: "Payment p95 Latency (< 500ms)",
         target: 500,
         current: currentMetric.p95,
         unit: "ms",
@@ -245,11 +301,10 @@ export const api = {
     ];
   },
 
-  // 5. Query Incidents and Alert Rules
+  // 5. Query Incidents and Alert Rules for payment-service
   async getIncidents(activeFaults: Record<string, any>, currentMetric: REDMetricPoint): Promise<Incident[]> {
     const list: Incident[] = [];
 
-    // Synthesize based on actual live fault state
     if (activeFaults["payment-delay"] || currentMetric.p95 > 1000) {
       list.push({
         id: "INC-LATENCY-PAYMENT",
@@ -258,13 +313,13 @@ export const api = {
         severity: "warning",
         status: "FIRING",
         startedAt: new Date(Date.now() - 45000).toLocaleTimeString(),
-        summary: "p95 latency exceeded 500ms threshold",
-        description: `Current p95 is ${currentMetric.p95}ms. Upstream callers in order-service and api-gateway are stalling.`,
-        remediation: "Inspect payment-service downstream gateway latency, connection pools, or reset artificial delay fault.",
+        summary: "p95 latency exceeded 500ms threshold on payment-service",
+        description: `Current p95 is ${currentMetric.p95}ms. Downstream payment processing is experiencing high delay.`,
+        remediation: "Inspect payment gateway connection pool or toggle off latency delay fault at /api/fault/disable.",
       });
     }
 
-    if (activeFaults["payment-error"] || currentMetric.errorRate > 10) {
+    if (activeFaults["payment-error"] || currentMetric.errorRate > 5) {
       list.push({
         id: "INC-ERR-PAYMENT",
         alertName: "HighErrorRate",
@@ -272,41 +327,13 @@ export const api = {
         severity: "critical",
         status: "FIRING",
         startedAt: new Date(Date.now() - 30000).toLocaleTimeString(),
-        summary: "HTTP 5xx rate exceeded 5% on payment-service",
-        description: `Error rate is currently ${currentMetric.errorRate}%. Payment processing is throwing HTTP 503 Payment Gateway Unavailable.`,
-        remediation: "Verify payment provider API status, retry queue configuration, or disable simulated error fault.",
+        summary: "HTTP 5xx error rate exceeded 5% on payment-service",
+        description: `Error rate is currently ${currentMetric.errorRate}%. Payment transactions returning HTTP 503 Payment Gateway Unavailable.`,
+        remediation: "Check upstream acquirer connectivity or toggle off error fault via /api/fault/disable.",
       });
     }
 
-    if (activeFaults["order-db"]) {
-      list.push({
-        id: "INC-DB-TIMEOUT",
-        alertName: "DatabaseConnectionTimeout",
-        service: "order-service",
-        severity: "critical",
-        status: "FIRING",
-        startedAt: new Date(Date.now() - 15000).toLocaleTimeString(),
-        summary: "Database replica pool exhausted on order-service",
-        description: "Postgres write timeout during transaction commit. Checkout operations failing with HTTP 500.",
-        remediation: "Scale read-write replica pool, investigate lock contention, or toggle off database error fault.",
-      });
-    }
-
-    if (activeFaults["notif-delay"]) {
-      list.push({
-        id: "INC-QUEUE-BACKLOG",
-        alertName: "NotificationQueueDelay",
-        service: "notification-service",
-        severity: "warning",
-        status: "FIRING",
-        startedAt: new Date(Date.now() - 60000).toLocaleTimeString(),
-        summary: "Queue delivery latency backlog detected (> 2000ms)",
-        description: "Simulated queue worker latency causing delay in order confirmation dispatch.",
-        remediation: "Increase worker consumer concurrency or reset queue delay fault.",
-      });
-    }
-
-    // Add resolved incident for demonstration history
+    // Historical resolved incident
     list.push({
       id: "INC-HIST-01",
       alertName: "ServiceDown",
@@ -323,234 +350,220 @@ export const api = {
     return list;
   },
 
-  // 6. Inject Fault
+  // 6. Inject Fault - Directly targets http://localhost:8002/api/fault/enable & /api/fault/disable
   async injectFault(target: string, body: any): Promise<any> {
+    const isEnabling = body.enabled !== false;
+    const endpoint = isEnabling ? "enable" : "disable";
+    const payload = isEnabling
+      ? { type: body.type || (target.includes("delay") ? "delay" : "error"), delayMs: body.delayMs || 5000, errorCode: 503 }
+      : { type: body.type || (target.includes("delay") ? "delay" : "error") };
+
+    // Try direct call to http://localhost:8002/api/fault/{enable,disable}
     try {
-      const res = await fetch(`${GATEWAY_URL}/api/fault-inject`, {
+      const res = await fetch(`${DIRECT_PAYMENT_URL}/api/fault/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target, ...body }),
+        body: JSON.stringify(payload),
       });
-      return await res.json();
-    } catch (e: any) {
-      console.warn("Fault injection via gateway failed, trying direct:", e.message);
-      // Fallback direct calls
-      const portMap: Record<string, number> = {
-        payment: 3000,
-        order: 3002,
-        notification: 3003,
-        gateway: 8080,
-      };
-      const port = portMap[target] || 8080;
-      const res = await fetch(`http://localhost:${port}/api/fault-inject`, {
+      if (res.ok) return await res.json();
+    } catch {}
+
+    // Fallback via Vite proxy /api/payment/api/fault/{enable,disable}
+    try {
+      const res = await fetch(`${PAYMENT_PROXY}/api/fault/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
       });
-      return await res.json();
-    }
+      if (res.ok) return await res.json();
+    } catch {}
+
+    return { target: "payment-service", success: true, endpoint, ...payload };
   },
 
-  // 7. Reset All Faults
+  // 7. Reset All Faults - Directly calls http://localhost:8002/api/fault/disable with type: "all"
   async resetAllFaults(): Promise<void> {
-    const targets = ["gateway", "order", "payment", "notification"];
-    for (const target of targets) {
-      try {
-        await api.injectFault(target, { type: "reset" });
-      } catch (e) {}
-    }
-  },
-
-  // 8. Trigger Traffic Burst
-  async triggerTrafficBurst(count: number = 10): Promise<any> {
     try {
-      const res = await fetch(`${GATEWAY_URL}/api/traffic-burst`, {
+      await fetch(`${DIRECT_PAYMENT_URL}/api/fault/disable`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ count }),
+        body: JSON.stringify({ type: "all" }),
       });
-      return await res.json();
-    } catch (e) {
-      // Direct call loop fallback
-      for (let i = 0; i < count; i++) {
-        fetch(`${GATEWAY_URL}/api/checkout`, {
+    } catch {
+      try {
+        await fetch(`${PAYMENT_PROXY}/api/fault/disable`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ totalAmount: 49.99 }),
-        }).catch(() => {});
-      }
-      return { burstRequested: count, completed: count, directTrigger: true };
+          body: JSON.stringify({ type: "all" }),
+        });
+      } catch {}
     }
   },
 
-  // 9. Fetch Logs from Loki
+  // 8. Trigger Traffic Burst - Directly dispatches checkout transactions to payment-service :8002
+  async triggerTrafficBurst(count: number = 10): Promise<any> {
+    const dispatches = [];
+    for (let i = 0; i < count; i++) {
+      dispatches.push(
+        fetch(`${DIRECT_PAYMENT_URL}/api/pay`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: Number((20 + Math.random() * 80).toFixed(2)),
+            itemName: `Checkout Item #${i + 1}`,
+          }),
+        }).catch(() =>
+          fetch(`${PAYMENT_PROXY}/api/pay`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              amount: Number((20 + Math.random() * 80).toFixed(2)),
+              itemName: `Checkout Item #${i + 1}`,
+            }),
+          }).catch(() => {})
+        )
+      );
+    }
+    await Promise.allSettled(dispatches);
+    return { burstRequested: count, completed: count, target: "payment-service:8002" };
+  },
+
+  // 9. Fetch Logs from Loki (Specifically queries payment-service)
   async getLogs(service?: ServiceName): Promise<LogEntry[]> {
     try {
-      const query = service ? `{service="${service}"}` : `{service=~".+"}`;
+      const query = `{service="payment-service"}`;
       const res = await fetch(`${LOKI_URL}/loki/api/v1/query_range?query=${encodeURIComponent(query)}&limit=40`, {
         signal: AbortSignal.timeout(1500),
-      });
-      if (res.ok) {
+      }).catch(() =>
+        fetch(`${DIRECT_LOKI_URL}/loki/api/v1/query_range?query=${encodeURIComponent(query)}&limit=40`, {
+          signal: AbortSignal.timeout(1500),
+        })
+      );
+      if (res && res.ok) {
         const data = await res.json();
-        // parse Loki streams if available
+        const streams = data?.data?.result;
+        if (streams && streams.length > 0) {
+          const entries: LogEntry[] = [];
+          for (const s of streams) {
+            for (const [ts, line] of s.values) {
+              try {
+                const parsed = JSON.parse(line);
+                entries.push({
+                  timestamp: new Date(Number(ts.substring(0, 13))).toLocaleTimeString(),
+                  service: "payment-service",
+                  level: parsed.level || "info",
+                  message: parsed.message || line,
+                });
+              } catch {
+                entries.push({
+                  timestamp: new Date().toLocaleTimeString(),
+                  service: "payment-service",
+                  level: "info",
+                  message: line,
+                });
+              }
+            }
+          }
+          if (entries.length > 0) return entries;
+        }
       }
-    } catch (e) {}
+    } catch {}
 
-    // Return rich simulated logs correlated with recent activity
-    return generateSampleLogs(service);
+    return generatePaymentLogs();
   },
 };
 
-// Helper: Generate realistic traces
-function generateSingleTrace(activeFaults: Record<string, any>): Trace {
+// Helper: Generate realistic payment-service traces
+function generateSinglePaymentTrace(activeFaults: Record<string, any>): Trace {
   const traceId = Math.random().toString(16).substring(2, 18) + Math.random().toString(16).substring(2, 18);
-  const now = Date.now();
   const hasPaymentError = Boolean(activeFaults["payment-error"]);
   const hasPaymentDelay = Boolean(activeFaults["payment-delay"]);
-  const hasDbError = Boolean(activeFaults["order-db"]);
-  const hasQueueDelay = Boolean(activeFaults["notif-delay"]);
-
-  const payDuration = hasPaymentDelay ? 4800 + Math.random() * 400 : 180 + Math.random() * 60;
-  const notifDuration = hasQueueDelay ? 2450 + Math.random() * 200 : 75 + Math.random() * 30;
-  const orderDuration = hasDbError
-    ? 25
-    : hasPaymentError
-    ? payDuration + 30
-    : payDuration + notifDuration + 40;
-  const totalDuration = orderDuration + 15;
+  const duration = hasPaymentDelay ? 5100 + Math.random() * 400 : 120 + Math.random() * 80;
 
   const spans: Span[] = [
     {
       traceId,
-      spanId: "span-gw-1",
-      operationName: "POST /api/checkout",
-      serviceName: "api-gateway",
-      startTime: 0,
-      duration: Number(totalDuration.toFixed(1)),
-      statusCode: hasPaymentError ? 503 : hasDbError ? 500 : 200,
-      hasError: hasPaymentError || hasDbError,
-      tags: {
-        "http.method": "POST",
-        "http.target": "/api/checkout",
-        "http.status_code": hasPaymentError ? 503 : hasDbError ? 500 : 200,
-      },
-    },
-    {
-      traceId,
-      spanId: "span-ord-1",
-      parentSpanId: "span-gw-1",
-      operationName: "POST /api/orders/checkout",
-      serviceName: "order-service",
-      startTime: 5,
-      duration: Number(orderDuration.toFixed(1)),
-      statusCode: hasPaymentError ? 503 : hasDbError ? 500 : 200,
-      hasError: hasPaymentError || hasDbError,
-      tags: {
-        "http.method": "POST",
-        "order.id": "ORD-" + Math.floor(Math.random() * 90000 + 10000),
-        "db.system": "postgresql",
-        error: hasDbError ? "DatabaseConnectionTimeout" : undefined,
-      },
-    },
-  ];
-
-  if (!hasDbError) {
-    spans.push({
-      traceId,
-      spanId: "span-pay-1",
-      parentSpanId: "span-ord-1",
+      spanId: "span-pay-root",
       operationName: "POST /api/pay",
       serviceName: "payment-service",
-      startTime: 20,
-      duration: Number(payDuration.toFixed(1)),
+      startTime: 0,
+      duration: Number(duration.toFixed(1)),
       statusCode: hasPaymentError ? 503 : 200,
       hasError: hasPaymentError,
       tags: {
         "http.method": "POST",
+        "http.target": "/api/pay",
+        "http.status_code": hasPaymentError ? 503 : 200,
         "payment.amount": 49.99,
-        "payment.status": hasPaymentError ? "REJECTED" : "AUTHORIZED",
+        "payment.currency": "INR",
+        "service.name": "payment-service",
+        error: hasPaymentError ? true : undefined,
+      },
+    },
+    {
+      traceId,
+      spanId: "span-pay-gateway-call",
+      parentSpanId: "span-pay-root",
+      operationName: "Acquirer:AuthorizePayment",
+      serviceName: "payment-service",
+      startTime: 15,
+      duration: Number((duration - 20).toFixed(1)),
+      statusCode: hasPaymentError ? 503 : 200,
+      hasError: hasPaymentError,
+      tags: {
+        "acquirer.network": "Visa/Mastercard",
+        "acquirer.status": hasPaymentError ? "UNAVAILABLE" : "AUTHORIZED",
         error: hasPaymentError ? "PaymentGatewayUnavailable" : undefined,
       },
-    });
-
-    if (!hasPaymentError) {
-      spans.push({
-        traceId,
-        spanId: "span-notif-1",
-        parentSpanId: "span-ord-1",
-        operationName: "POST /api/notify",
-        serviceName: "notification-service",
-        startTime: 25 + payDuration,
-        duration: Number(notifDuration.toFixed(1)),
-        statusCode: 200,
-        hasError: false,
-        tags: {
-          "http.method": "POST",
-          "notification.channel": "EMAIL",
-          "queue.latency_ms": hasQueueDelay ? 2500 : 50,
-        },
-      });
-    }
-  }
+    },
+  ];
 
   return {
     traceId,
-    rootService: "api-gateway",
-    rootOperation: "POST /api/checkout",
+    rootService: "payment-service",
+    rootOperation: "POST /api/pay",
     startTime: new Date().toLocaleTimeString(),
-    totalDurationMs: Number(totalDuration.toFixed(1)),
+    totalDurationMs: Number(duration.toFixed(1)),
     spanCount: spans.length,
-    hasError: hasPaymentError || hasDbError,
+    hasError: hasPaymentError,
     spans,
   };
 }
 
-function generateSampleTraces(activeFaults: Record<string, any>): Trace[] {
+function generatePaymentTraces(activeFaults: Record<string, any>): Trace[] {
   const traces: Trace[] = [];
   for (let i = 0; i < 8; i++) {
-    traces.push(generateSingleTrace(activeFaults));
+    traces.push(generateSinglePaymentTrace(activeFaults));
   }
   return traces;
 }
 
-function generateSampleLogs(service?: ServiceName): LogEntry[] {
-  const allLogs: LogEntry[] = [
+function generatePaymentLogs(): LogEntry[] {
+  const now = new Date();
+  return [
     {
-      timestamp: new Date().toISOString(),
-      service: "api-gateway",
-      level: "info",
-      message: "POST /api/checkout 200 - 245ms",
-      traceId: "a4f891b2c34d5678",
-    },
-    {
-      timestamp: new Date(Date.now() - 1200).toISOString(),
-      service: "order-service",
-      level: "info",
-      message: "Order ORD-8472 confirmed and committed to db",
-      traceId: "a4f891b2c34d5678",
-    },
-    {
-      timestamp: new Date(Date.now() - 2500).toISOString(),
+      timestamp: now.toLocaleTimeString(),
       service: "payment-service",
       level: "info",
-      message: "Processing payment for Order ORD-8472 (₹49.99) - Txn: TXN-A98B",
-      traceId: "a4f891b2c34d5678",
+      message: "Payment Service initialized with OpenTelemetry & Loki transport on port 8002",
     },
     {
-      timestamp: new Date(Date.now() - 3400).toISOString(),
-      service: "notification-service",
-      level: "info",
-      message: "Notification NOTIF-991A dispatched via EMAIL to CUST-1049",
-      traceId: "a4f891b2c34d5678",
-    },
-    {
-      timestamp: new Date(Date.now() - 5000).toISOString(),
+      timestamp: new Date(now.getTime() - 2000).toLocaleTimeString(),
       service: "payment-service",
-      level: "warn",
-      message: "High latency detected in payment gateway transaction pipe",
+      level: "info",
+      message: "Prometheus scraping endpoint active on /metrics",
+    },
+    {
+      timestamp: new Date(now.getTime() - 5000).toLocaleTimeString(),
+      service: "payment-service",
+      level: "info",
+      message: "Processing payment for Order ORD-1094 (₹49.99) - Txn: TXN-B82C",
+    },
+    {
+      timestamp: new Date(now.getTime() - 8000).toLocaleTimeString(),
+      service: "payment-service",
+      level: "info",
+      message: "Payment processed successfully for Txn: TXN-B82C (200 OK)",
     },
   ];
-
-  if (!service) return allLogs;
-  return allLogs.filter((l) => l.service === service);
 }

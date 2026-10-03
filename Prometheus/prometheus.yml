@@ -8,16 +8,4 @@ rule_files:
 scrape_configs:
   - job_name: "payment-service"
     static_configs:
-      - targets: ["payment-service:9464", "host.docker.internal:9464"]
-
-  - job_name: "order-service"
-    static_configs:
-      - targets: ["order-service:9465", "host.docker.internal:9465"]
-
-  - job_name: "api-gateway"
-    static_configs:
-      - targets: ["api-gateway:9466", "host.docker.internal:9466"]
-
-  - job_name: "notification-service"
-    static_configs:
-      - targets: ["notification-service:9467", "host.docker.internal:9467"]
+      - targets: ["payment-service:8002", "host.docker.internal:8002"]

@@ -1,207 +1,140 @@
-# MicroWatch Observability Platform — Runbook & Verification Guide
+# MicroWatch Observability Platform — Presentation Guide & Execution Runbook
 
-This runbook guides you through starting, operating, testing, and conducting incident drills with the **MicroWatch** microservices observability platform.
-
----
-
-## 🏗️ Architecture Summary
-
-```
-                       ┌─────────────────────────┐
-                       │  React Observability UI │ (Port 5173)
-                       │       (Dashboard)       │
-                       └───────────┬─────────────┘
-                                   │
-                                   ▼
-                       ┌─────────────────────────┐
-                       │       API Gateway       │ (Port 8080, Metrics: 9466)
-                       └───────────┬─────────────┘
-                                   │
-                                   ▼
-                       ┌─────────────────────────┐
-                       │      Order Service      │ (Port 3002, Metrics: 9465)
-                       └──────┬────────────┬─────┘
-                              │            │
-             ┌────────────────┘            └────────────────┐
-             ▼                                              ▼
-┌─────────────────────────┐                    ┌─────────────────────────┐
-│     Payment Service     │ (Port 3000)        │   Notification Service  │ (Port 3003)
-│     (Metrics: 9464)     │                    │     (Metrics: 9467)     │
-└────────────┬────────────┘                    └────────────┬────────────┘
-             │                                              │
-             └──────────────────────┬───────────────────────┘
-                                    │
-                                    ▼
-       ┌────────────────────────────────────────────────────────┐
-       │               Telemetry Infrastructure                 │
-       │  • Prometheus (9090)  • Jaeger (16686)  • Loki (3100)  │
-       └────────────────────────────────────────────────────────┘
-```
+This guide provides the complete architectural blueprint, technical justification, clean Docker execution runbook, and a scripted 2-minute live demo of the **MicroWatch** observability platform for college project mentors and technical jury evaluations.
 
 ---
 
-## 🚀 Quickstart: Running MicroWatch
+## 🏛️ Deliverable 1: Visual System Architecture Diagram
 
-### Option A: Turnkey with Docker Compose (Recommended)
+```
+              +----------------------------------------------+
+              |           Client / Synthetic Traffic         |
+              |          (Browser / Dashboard / cURL)        |
+              +-----------------------+----------------------+
+                                      |
+                                      | HTTP Requests (:8002/api/pay)
+                                      v
+              +----------------------------------------------+
+              |               PAYMENT-SERVICE                |
+              |   - Express.js HTTP Server                   |
+              |   - OpenTelemetry Auto/Manual SDK            |
+              |   - Loki Structured JSON Logger              |
+              |   - Fault Injection Controller               |
+              +-------+---------------+--------------+-------+
+                      |               |              |
+       Prometheus Scrapes             |              | Spans (OTLP)
+       (:8002/metrics) |               |              | (:4318)
+                      v               v              v
+              +---------------+ +------------+ +-------------+
+              |  PROMETHEUS   | |    LOKI    | |   JAEGER    |
+              |  (Metrics TSDB| |(Log Engine)| |(Distributed |
+              |   Port: 9090) | |Port: 3100) | |Trace Store) |
+              |               | |            | | Port: 16686 |
+              +-------+-------+ +-----+------+ +------+------+
+                      |               |               |
+                      +---------------+---------------+
+                                      |
+                                      | REST / PromQL / Trace APIs
+                                      v
+              +----------------------------------------------+
+              |           MICROWATCH REACT DASHBOARD         |
+              |  - Clean SaaS Light / Dark Theme             |
+              |  - RED Metrics (Throughput, Latency, Errors) |
+              |  - SLO & Error Budget Gauges                 |
+              |  - Jaeger Trace Waterfall & Fault Toggle     |
+              |  Port: 3000                                  |
+              +----------------------------------------------+
+```
 
-Make sure Docker Desktop is started, then execute in the root directory:
+---
+
+## 💡 Deliverable 2: Simplified Technical Breakdown
+
+### 1. What Are We Doing?
+We built **MicroWatch**, an end-to-end cloud-native observability sandbox. Rather than treating microservices as black boxes where failures only surface after user complaints or total downtime, MicroWatch continuously extracts the **"Three Pillars of Observability"** (metrics, logs, and distributed traces) from a running payment service. 
+
+It calculates real-time reliability health (RED metrics and Google SRE SLO error budget burn) and renders it through a single-pane-of-glass dashboard equipped with live chaos fault injection.
+
+### 2. What Technologies Did We Use & Why?
+
+| Component | Tool Chosen | Why We Used It |
+| :--- | :--- | :--- |
+| **Monitored Service** | Node.js + Express (`payment-service`) | Lightweight, event-driven runtime ideal for showcasing API transactions, telemetry hooks, and fault injection. |
+| **Telemetry Standard** | OpenTelemetry (OTel) SDK | Vendor-neutral industry standard for emitting metrics and traces without proprietary vendor lock-in. |
+| **Metrics Engine** | Prometheus | Scrapes time-series data at high frequency and evaluates PromQL alert expressions efficiently. |
+| **Tracing Engine** | Jaeger | Visualizes request execution lifecycles and isolates latency bottlenecks via waterfall charts. |
+| **Log Management** | Grafana Loki | Efficient, label-indexed log aggregation correlated directly with request trace IDs. |
+| **Unified Dashboard** | React + TypeScript + Tailwind CSS | Minimalist, high-performance UI featuring light/dark mode and instant visual alerts. |
+| **Orchestration** | Docker Compose | One-command local containerization ensuring uniform execution across any machine. |
+
+---
+
+## ⚡ Deliverable 3: Clean Step-by-Step Runbook (Minimal Console Output)
+
+To prevent multi-screen terminal flooding during evaluations, execute using Docker's quiet (`-q`) and detached (`-d`) flags:
 
 ```bash
-docker compose up --build
+# Step 1: Clean any stale or orphaned containers
+docker compose down --remove-orphans
+
+# Step 2: Build silently (suppresses verbose intermediate layers)
+docker compose build -q
+
+# Step 3: Launch entire stack in detached background mode
+docker compose up -d
+
+# Step 4: Verify running containers in one concise table
+docker compose ps
 ```
 
-All 8 containers will build and start:
-- **Observability Dashboard:** [http://localhost:5173](http://localhost:5173)
-- **API Gateway:** [http://localhost:8080](http://localhost:8080)
-- **Order Service:** [http://localhost:3002](http://localhost:3002)
-- **Payment Service:** [http://localhost:3000](http://localhost:3000)
-- **Notification Service:** [http://localhost:3003](http://localhost:3003)
-- **Jaeger UI:** [http://localhost:16686](http://localhost:16686)
-- **Prometheus UI:** [http://localhost:9090](http://localhost:9090)
-- **Loki Logs:** [http://localhost:3100](http://localhost:3100)
+### 🌐 Port Access Reference
+
+| Service / Interface | URL | Description |
+|---|---|---|
+| **MicroWatch Dashboard** | [http://localhost:3000](http://localhost:3000) | Observability UI with Theme Switcher & SLO Monitors |
+| **Payment Service API** | [http://localhost:8002](http://localhost:8002) | Health check (`/health`) and metrics (`/metrics`) |
+| **Prometheus TSDB** | [http://localhost:9090](http://localhost:9090) | Time-series scraper and PromQL alerting engine |
+| **Jaeger Trace Viewer** | [http://localhost:16686](http://localhost:16686) | Distributed tracing UI and waterfall visualizer |
+| **Grafana Loki Logs** | [http://localhost:3100](http://localhost:3100) | Centralized structured log ingestion API |
 
 ---
 
-### Option B: Local Mode (Node.js Direct)
+## 🎤 Deliverable 4: Mentor Presentation & 2-Minute Live Demo Script
 
-If running Docker is optional or you want to debug Node services locally:
+Use this exact, spoken script during evaluation:
 
-1. **Start Telemetry Containers (Jaeger, Prometheus, Loki):**
-   ```bash
-   # Jaeger
-   docker run -d --name jaeger -p 16686:16686 -p 4317:4317 -p 4318:4318 jaegertracing/all-in-one:latest
-
-   # Prometheus
-   docker run -d --name prometheus -p 9090:9090 -v %cd%/Prometheus/prometheus.yml:/etc/prometheus/prometheus.yml -v %cd%/Prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml prom/prometheus:latest
-
-   # Loki
-   docker run -d --name loki -p 3100:3100 -v %cd%/loki-config.yaml:/etc/loki/local-config.yaml grafana/loki:latest -config.file=/etc/loki/local-config.yaml
-   ```
-
-2. **Start the Microservices in Separate Terminals:**
-   ```bash
-   # Terminal 1: Payment Service
-   cd payment-service
-   node index.js
-
-   # Terminal 2: Notification Service
-   cd notification-service
-   node index.js
-
-   # Terminal 3: Order Service
-   cd order-service
-   node index.js
-
-   # Terminal 4: API Gateway
-   cd api-gateway
-   node index.js
-
-   # Terminal 5: Dashboard
-   cd dashboard
-   npm run dev
-   ```
-
-*(Alternatively, use `npm run dev:all` or the included `start-services.bat` helper)*.
+### Part A: Introduction (30 seconds)
+> *"Respected Mentor, modern distributed systems often fail silently because metrics, logs, and traces live in separate silos. When an issue occurs in production, developers typically waste hours cross-referencing disjointed tools.*
+>
+> *MicroWatch solves this by instrumenting a business-critical service with the OpenTelemetry standard and unifying its operational signals into a single real-time dashboard. Here is our live system running inside isolated Docker containers."*
 
 ---
 
-## 🧪 Verification & Incident Drill Procedures
+### Part B: Normal Health & Metrics Baseline (30 seconds)
+*(Open [http://localhost:3000](http://localhost:3000) in your browser)*
 
-### Drill 1: Baseline Steady-State Traffic
-
-1. Open the **MicroWatch Dashboard** at [http://localhost:5173](http://localhost:5173).
-2. Confirm the **Topology Graph** displays all 4 services in green (`UP`).
-3. Click the **"⚡ Trigger 20 Requests"** button in the dashboard top navigation bar, or run in terminal:
-   ```bash
-   node load-test.js --rps 5 --duration 20
-   ```
-4. **Expected Results:**
-   - **RED Metrics Hub:** Throughput ramps up to ~5 req/s. Error rate stays at 0.0%. p95 latency stays under 250ms.
-   - **SLO Monitor:** Availability Error Budget remains at 100%. Burn rate is normal (< 1x).
-   - **Distributed Trace Viewer:** Expanding any recent trace shows 4 distinct spans:
-     1. `api-gateway` (`POST /api/checkout`)
-     2. `order-service` (`POST /api/checkout`)
-     3. `payment-service` (`POST /api/pay`)
-     4. `notification-service` (`POST /api/notify`)
-   - **Incident Timeline:** Clean — no firing alerts.
+> *"As you can see on our dashboard:*
+> 1. *We have an icon-first layout with an instant **Light / Dark Mode Switcher** in the top navigation.*
+> 2. *Our **RED Metrics** show normal operational health: nominal throughput (~5 req/s), sub-100ms p95 latency, and 0.0% error rate.*
+> 3. *Our **SLO Gauges** track a 99.0% Availability Objective and <500ms Latency Target, both running at 100% remaining Error Budget with a nominal burn rate.*
+> 4. *In our **Trace Viewer**, request spans complete cleanly in under 50ms with valid W3C trace IDs."*
 
 ---
 
-### Drill 2: Payment Service Delay (Latency Spike & SLO Burn)
+### Part C: Live Chaos & Root-Cause Isolation (60 seconds)
+*(In the Dashboard Chaos Panel, toggle **Simulate Latency Delay (+5000ms)** or click **Inject Payment Fault**)*
 
-1. **Inject Fault:**
-   - Option A: In the **Dashboard Fault Panel**, toggle **"Simulate Delay"** under **Payment Service** and set the slider to `4500ms`.
-   - Option B: Run via CLI:
-     ```bash
-     node load-test.js --drill payment-delay --rps 4 --duration 30
-     ```
-2. **Observe System Response in Real-Time:**
-   - **RED Metrics:** Latency immediately spikes to > 4,500ms.
-   - **Topology Graph:** `payment-service` badge changes to `DEGRADED (4.5s delay)`. Flow animation slows down.
-   - **Trace Waterfall:** Click any new trace in the Trace Viewer. The `payment-service` span expands to take 4.5 seconds, while `api-gateway` and `order-service` wait on it.
-   - **SLO Monitor:** Latency SLO error budget burns rapidly (burn rate > 10x).
-   - **Prometheus Alert:** Within 15 seconds, the `HighLatency` alert switches from `PENDING` to `FIRING`.
-   - **Incident Timeline:** Logs `[CRITICAL/WARNING] High latency in payment service (p95 > 500ms)`.
-3. **Recovery:**
-   - Click **"Reset All Faults"** in the top navigation bar.
-   - The system returns to nominal sub-200ms latency and alerts resolve.
+> *"Now, let's inject a realistic production failure: an artificial 5-second latency delay in payment processing.*
+>
+> *(Point to the screen as the cards react)*
+>
+> 1. *Within seconds, Prometheus scrapes the increased response times from `payment-service:8002/metrics`.*
+> 2. *The **p95 Latency** card turns amber/red as it spikes from 120ms to over 5,000ms.*
+> 3. *The **SLO Latency Budget** gauge immediately detects an anomalous 14.4x burn rate, warning that our error budget will exhaust in under 1.5 hours.*
+> 4. *Looking at our **Jaeger Trace Waterfall**, the `/api/pay` span is visually stretched across 5.1 seconds, pinpointing the exact delay inside `payment-service`.*
+> 5. *Now, I click **Reset Faults**—and the error budget burn halts, returning the service to nominal health instantly."*
 
 ---
 
-### Drill 3: Payment Service Error Injection (503 Gateway Unavailable)
-
-1. **Inject Fault:**
-   - Toggle **"Simulate 503 Errors"** under **Payment Service** in the dashboard.
-   - Or run:
-     ```bash
-     node load-test.js --drill payment-error --rps 5 --duration 25
-     ```
-2. **Observe System Response:**
-   - **RED Metrics:** Error rate jumps to 100%. 5xx status codes surge.
-   - **Topology Graph:** `payment-service` shows red `CRITICAL ERROR (HTTP 503)`.
-   - **Trace Waterfall:** Spans turn red with `error: true` and `http.status_code: 503`. Notice that `notification-service` is skipped because payment failed!
-   - **SLO Monitor:** Availability Error budget drops precipitously towards 0% exhaustion.
-   - **Prometheus Alert:** `HighErrorRate` rule fires on `payment-service`.
-   - **Incident Timeline:** Logs incident with root-cause tag: `payment-service`.
-3. **Recovery:**
-   - Click **"Reset All Faults"**. Error rate immediately drops to 0%.
-
----
-
-### Drill 4: Order Service Database Timeout
-
-1. **Inject Fault:**
-   - Under **Order Service**, toggle **"Simulate Database Failure"**.
-   - Or run:
-     ```bash
-     node load-test.js --drill order-db --rps 5 --duration 20
-     ```
-2. **Observe System Response:**
-   - Order service immediately throws 500 `DatabaseConnectionTimeout`.
-   - Notice in Jaeger traces: Neither `payment-service` nor `notification-service` are called — the transaction fails at the persistence tier!
-   - Incident timeline pinpoints root cause to `order-service` database replica timeout.
-
----
-
-### Drill 5: Notification Service Queue Backlog
-
-1. **Inject Fault:**
-   - Under **Notification Service**, toggle **"Simulate Queue Backlog (2500ms)"**.
-2. **Observe System Response:**
-   - Overall checkout end-to-end latency increases by 2.5s.
-   - Trace viewer clearly shows that payment was completed fast (200ms), but the final stage `notification-service` took 2,500ms in queue processing.
-
----
-
-## 📊 Endpoints & Ports Reference
-
-| Component | Port | Metrics Port | Key Endpoints |
-|---|---|---|---|
-| **API Gateway** | 8080 | 9466 | `POST /api/checkout`, `GET /health`, `POST /api/fault-inject`, `GET /api/services/status` |
-| **Order Service** | 3002 | 9465 | `POST /api/checkout`, `GET /api/orders`, `GET /health`, `POST /api/fault-inject` |
-| **Payment Service** | 3000 | 9464 | `POST /api/pay`, `GET /health`, `POST /api/fault-inject` |
-| **Notification Service** | 3003 | 9467 | `POST /api/notify`, `GET /health`, `POST /api/fault-inject` |
-| **Dashboard** | 5173 | N/A | Interactive Observability UI |
-| **Prometheus** | 9090 | N/A | `/api/v1/query`, `/api/v1/query_range`, `/api/v1/alerts` |
-| **Jaeger** | 16686 / 4318 | N/A | Tracing UI `/` and OTLP collector `/v1/traces` |
-| **Loki** | 3100 | N/A | Structured log queries `/loki/api/v1/query_range` |
+### Closing Verdict
+> *"Without digging into server terminal logs or guessing which component failed, MicroWatch enabled us to detect the service degradation, pinpoint the culprit span, and flag an SLO breach in under 15 seconds. Thank you."*
