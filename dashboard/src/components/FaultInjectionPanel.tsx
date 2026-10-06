@@ -160,7 +160,7 @@ export const FaultInjectionPanel: React.FC<FaultInjectionPanelProps> = ({
         {/* 2. Order Service Faults */}
         <div
           className={`p-3.5 rounded-xl border transition-all ${
-            activeFaults["order-db"] || activeFaults["order-delay"]
+            activeFaults["order-db"]
               ? "border-amber-300 dark:border-amber-700 bg-amber-50/20 dark:bg-amber-950/20"
               : "border-slate-200/80 dark:border-slate-700/80 bg-slate-50/40 dark:bg-slate-900/40"
           }`}
@@ -171,10 +171,10 @@ export const FaultInjectionPanel: React.FC<FaultInjectionPanelProps> = ({
                 <Database className="w-3.5 h-3.5" />
               </div>
               <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                Order Service (:3002 / :8001)
+                Order Service (:3002) - Database Failure Mode
               </span>
             </div>
-            {(activeFaults["order-db"] || activeFaults["order-delay"]) && (
+            {activeFaults["order-db"] && (
               <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/60 px-1.5 py-0.2 rounded">
                 Active
               </span>
@@ -186,10 +186,10 @@ export const FaultInjectionPanel: React.FC<FaultInjectionPanelProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <span className="font-semibold text-red-700 dark:text-red-400 text-[11px] block">
-                  Simulate DB Timeout
+                  Database Failure (PostgreSQL Timeout)
                 </span>
                 <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                  Fails order persistence to database
+                  Order → Database → FAILURE (HTTP 500 & trace error)
                 </span>
               </div>
 
@@ -202,53 +202,6 @@ export const FaultInjectionPanel: React.FC<FaultInjectionPanelProps> = ({
                 />
                 <div className="w-8 h-4 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-red-600"></div>
               </label>
-            </div>
-
-            {/* Order Service Delay */}
-            <div className="flex flex-col gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200 text-[11px] block">
-                    Coordination Delay
-                  </span>
-                  <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                    Coordinator latency before downstream
-                  </span>
-                </div>
-
-                <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(activeFaults["order-delay"])}
-                    onChange={(e) =>
-                      onToggleFault("order-delay", e.target.checked, { delayMs: orderDelayVal })
-                    }
-                    className="sr-only peer"
-                  />
-                  <div className="w-8 h-4 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
-
-              {activeFaults["order-delay"] && (
-                <div className="pt-1.5 flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 shrink-0">
-                    {orderDelayVal}ms
-                  </span>
-                  <input
-                    type="range"
-                    min="1000"
-                    max="6000"
-                    step="500"
-                    value={orderDelayVal}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      setOrderDelayVal(val);
-                      onToggleFault("order-delay", true, { delayMs: val });
-                    }}
-                    className="flex-1 accent-blue-600 h-1 bg-slate-200 dark:bg-slate-700 rounded-lg cursor-pointer"
-                  />
-                </div>
-              )}
             </div>
           </div>
         </div>

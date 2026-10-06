@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MicroWatch Order Service</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg-primary: #fafaf9;
+            --bg-secondary: #ffffff;
+            --border: rgba(0, 0, 0, 0.08);
+            --text-primary: #18181b;
+            --text-secondary: #52525b;
+            --accent: #8b5cf6;
+            --danger: #ef4444;
+            --success: #10b981;
+            --radius: 12px;
+        }
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            width: 100%;
+            max-width: 520px;
+            padding: 32px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+        }
+        h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+        p.sub { color: var(--text-secondary); font-size: 14px; margin-bottom: 24px; }
+        .section { margin-bottom: 28px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+        .section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+        .form-group { margin-bottom: 16px; }
+        label { display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+        input, select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.9; }
+        button.btn-danger { background: var(--danger); }
+        button.btn-success { background: var(--success); }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-off { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+        .badge-on { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+        .response-box {
+            background: #18181b;
+            color: #10b981;
+            font-family: monospace;
+            font-size: 13px;
+            padding: 14px;
+            border-radius: 8px;
+            margin-top: 16px;
+            white-space: pre-wrap;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>ORDER SERVICE</h1>
+        <p class="sub">MicroWatch Order Placement & Fault Injection Interface</p>
+
+        <div class="section">
+            <h2>Create Order</h2>
+            <div class="form-group">
+                <label for="item">Item</label>
+                <input type="text" id="item" value="Pizza">
+            </div>
+            <div class="form-group">
+                <label for="quantity">Quantity</label>
+                <input type="number" id="quantity" value="1" min="1">
+            </div>
+            <button id="btnPlaceOrder">PLACE ORDER</button>
+        </div>
+
+        <div class="section">
+            <h2>Fault Injection</h2>
+            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
+                Database Failure Status: <span id="dbStatusBadge" class="badge badge-off">DISABLED</span>
+            </p>
+            <div style="display: flex; gap: 10px;">
+                <button id="btnEnableDbFault" class="btn-danger">Enable Database Failure</button>
+                <button id="btnDisableDbFault" class="btn-success">Disable Database Failure</button>
+            </div>
+        </div>
+
+        <div id="responseBox" class="response-box"></div>
+    </div>
+
+    <script>
+        const responseBox = document.getElementById('responseBox');
+        const dbStatusBadge = document.getElementById('dbStatusBadge');
+
+        async function fetchFaultStatus() {
+            try {
+                const res = await fetch('/api/fault-config');
+                const data = await res.json();
+                if (data.simulateDbError) {
+                    dbStatusBadge.textContent = 'ENABLED (FAILING)';
+                    dbStatusBadge.className = 'badge badge-on';
+                } else {
+                    dbStatusBadge.textContent = 'DISABLED (HEALTHY)';
+                    dbStatusBadge.className = 'badge badge-off';
+                }
+            } catch (e) {}
+        }
+
+        document.getElementById('btnPlaceOrder').addEventListener('click', async () => {
+            const item = document.getElementById('item').value;
+            const quantity = parseInt(document.getElementById('quantity').value, 10) || 1;
+            responseBox.style.display = 'block';
+            responseBox.textContent = 'Submitting order to /api/order...';
+
+            try {
+                const res = await fetch('/api/order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ item, quantity, totalAmount: 49.99 * quantity })
+                });
+                const data = await res.json();
+                responseBox.style.color = res.ok ? '#10b981' : '#ef4444';
+                responseBox.textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                responseBox.style.color = '#ef4444';
+                responseBox.textContent = 'Error: ' + err.message;
+            }
+        });
+
+        document.getElementById('btnEnableDbFault').addEventListener('click', async () => {
+            await fetch('/api/fault/enable', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'database' })
+            });
+            fetchFaultStatus();
+        });
+
+        document.getElementById('btnDisableDbFault').addEventListener('click', async () => {
+            await fetch('/api/fault/disable', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'database' })
+            });
+            fetchFaultStatus();
+        });
+
+        fetchFaultStatus();
+        setInterval(fetchFaultStatus, 2000);
+    </script>
+</body>
+</html>

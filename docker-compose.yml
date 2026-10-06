@@ -13,6 +13,23 @@ services:
       - microwatch-net
     restart: unless-stopped
 
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: microwatch-order-service
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - LOKI_HOST=http://loki:3100
+      - PAYMENT_SERVICE_URL=http://payment-service:8002
+    networks:
+      - microwatch-net
+    restart: unless-stopped
+
+
   dashboard:
     build:
       context: ./dashboard
@@ -20,8 +37,15 @@ services:
     container_name: microwatch-dashboard
     ports:
       - "3000:3000"
+    environment:
+      - VITE_PAYMENT_SERVICE_URL=http://payment-service:8002
+      - VITE_ORDER_SERVICE_URL=http://order-service:3002
+      - VITE_PROMETHEUS_URL=http://prometheus:9090
+      - VITE_JAEGER_URL=http://jaeger:16686
+      - VITE_LOKI_URL=http://loki:3100
     depends_on:
       - payment-service
+      - order-service
     networks:
       - microwatch-net
 

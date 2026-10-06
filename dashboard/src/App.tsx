@@ -62,11 +62,17 @@ const DashboardContent: React.FC = () => {
   // Primary Polling Function
   const fetchAllData = useCallback(async () => {
     try {
-      const [svcData, metricData, traceData] = await Promise.all([
+      const [svcData, metricData, traceData, orderDbFault] = await Promise.all([
         api.getServicesStatus(),
         api.getREDMetrics(activeFaults),
         api.getTraces(activeFaults),
+        api.getOrderFaultStatus(),
       ]);
+
+      setActiveFaults((prev) => {
+        if (Boolean(prev["order-db"]) === orderDbFault) return prev;
+        return { ...prev, "order-db": orderDbFault };
+      });
 
       setServices(svcData);
       setCurrentMetric(metricData.current);

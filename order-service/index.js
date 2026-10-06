@@ -1,9 +1,10 @@
-require("./telemetry");
+const { exporter } = require("./telemetry");
 const logger = require("./logger");
 
 const express = require("express");
 const cors = require("cors");
 const crypto = require("crypto");
+const path = require("path");
 const { trace, context, propagation } = require("@opentelemetry/api");
 
 const app = express();
@@ -11,20 +12,16 @@ app.use(cors());
 app.use(express.json());
 
 const PAYMENT_SERVICE_URL =
-  process.env.PAYMENT_SERVICE_URL || "http://localhost:3000";
+  process.env.PAYMENT_SERVICE_URL || "http://localhost:8002";
 const NOTIFICATION_SERVICE_URL =
   process.env.NOTIFICATION_SERVICE_URL || "http://localhost:3003";
 
 // In-memory order store
 const orders = [];
 
-// Fault Injection Configuration
+// Fault Injection Configuration - Order Service focuses specifically on Database Failure
 let faultConfig = {
-  simulateDelay: false,
-  delayMs: 3000,
   simulateDbError: false,
-  simulateError: false,
-  errorCode: 500,
 };
 
 // Middleware: Trace context extraction and correlation
@@ -87,7 +84,53 @@ async function callService(url, options = {}) {
   };
 }
 
-// 1. Health
+// 0. Prometheus Metrics Endpoint
+app.get("/metrics", (req, res) => {
+  exporter.getMetricsRequestHandler(req, res);
+});
+
+// 1. Root / UI Endpoint
+app.get("/", (req, res) => {
+  if (req.accepts("html") && !req.xhr) {
+    const htmlPath = path.join(__dirname, "index.html");
+    return res.sendFile(htmlPath, (err) => {
+      if (err) {
+        res.json({
+          service: "order-service",
+          status: "UP",
+          port: PORT,
+          endpoints: [
+            "/metrics",
+            "/health",
+            "/api/checkout",
+            "/api/order",
+            "/api/orders",
+            "/api/fault/enable",
+            "/api/fault/disable",
+            "/api/fault-config",
+          ],
+        });
+      }
+    });
+  }
+  res.json({
+    service: "order-service",
+    status: "UP",
+    endpoints: {
+      metrics: "GET /metrics",
+      health: "GET /health",
+      checkout: "POST /api/checkout",
+      order: "POST /api/order",
+      orders: "GET /api/orders",
+      orderById: "GET /api/orders/:id",
+      faultEnable: "POST /api/fault/enable",
+      faultDisable: "POST /api/fault/disable",
+      faultConfig: "GET /api/fault-config",
+    },
+  });
+});
+
+// 2. Health Endpoint
 app.get("/health", (req, res) => {
   res.json({
     status: "UP",
@@ -97,40 +140,105 @@ app.get("/health", (req, res) => {
   });
 });
 
-// 2. Fault Config Query
+// 3. Fault Config & Control Endpoints
 app.get("/api/fault-config", (req, res) => {
   res.json(faultConfig);
 });
 
-// 3. Checkout Coordination Endpoint
-app.post(["/api/checkout", "/api/orders/checkout"], async (req, res) => {
-  const { customerId, items, totalAmount, paymentMethod, shippingAddress } =
-    req.body;
+app.get("/api/fault/status", (req, res) => {
+  res.json(faultConfig);
+});
 
-  const orderId = `ORD-${crypto.randomUUID().split("-")[0].toUpperCase()}`;
-  logger.info(`Starting order checkout workflow for ${orderId}`, {
-    traceId: req.traceId,
-    orderId,
-    customerId,
-    totalAmount,
+app.post("/api/fault/enable", (req, res) => {
+  faultConfig.simulateDbError = true;
+  logger.warn("Database fault injection enabled", {
+    service: "order-service",
+    faultType: "database",
   });
+  res.json({
+    success: true,
+    message: "Database failure fault enabled",
+    currentConfig: faultConfig,
+  });
+});
 
-  // A. Check for artificial delay fault
-  if (faultConfig.simulateDelay) {
-    logger.warn(`[Fault] Injecting order processing delay: ${faultConfig.delayMs}ms`, {
-      traceId: req.traceId,
-      orderId,
-    });
-    await new Promise((resolve) => setTimeout(resolve, faultConfig.delayMs));
+app.post("/api/fault/disable", (req, res) => {
+  faultConfig.simulateDbError = false;
+  logger.info("Database fault disabled", {
+    service: "order-service",
+    faultType: "database",
+  });
+  res.json({
+    success: true,
+    message: "Database failure fault disabled",
+    currentConfig: faultConfig,
+  });
+});
+
+// Backwards-compatible /api/fault-inject
+app.post("/api/fault-inject", (req, res) => {
+  const { type, enabled } = req.body || {};
+
+  if (type === "dbError" || type === "database") {
+    faultConfig.simulateDbError = Boolean(enabled);
+  } else if (type === "reset") {
+    faultConfig.simulateDbError = false;
   }
 
-  // B. Check for simulated database error fault
+  logger.info(`[order-service] Fault config updated: ${JSON.stringify(faultConfig)}`);
+
+  res.json({
+    service: "order-service",
+    message: "Fault configuration updated",
+    currentConfig: faultConfig,
+  });
+});
+
+// 4. Order Checkout & Creation Handler
+const handleOrderCheckout = async (req, res) => {
+  const { customerId, items, item, quantity, totalAmount, paymentMethod, shippingAddress } = req.body || {};
+
+  const orderId = `ORD-${crypto.randomUUID().split("-")[0].toUpperCase()}`;
+
+  logger.info("Order request received", {
+    traceId: req.traceId,
+    spanId: req.spanId,
+    orderId,
+    customerId: customerId || "guest",
+  });
+
+  logger.info("Processing order", {
+    traceId: req.traceId,
+    spanId: req.spanId,
+    orderId,
+  });
+
+  // Database Failure Fault Injection
   if (faultConfig.simulateDbError) {
-    logger.error(`[Fault] Database timeout: unable to write order record ${orderId}`, {
+    logger.warn("Database fault injection enabled", {
       traceId: req.traceId,
+      spanId: req.spanId,
+      orderId,
+    });
+    logger.error("Database operation failed", {
+      traceId: req.traceId,
+      spanId: req.spanId,
       orderId,
       errorType: "DB_CONNECTION_TIMEOUT",
     });
+    logger.error("Order failed", {
+      traceId: req.traceId,
+      spanId: req.spanId,
+      orderId,
+    });
+
+    const activeSpan = trace.getSpan(context.active());
+    if (activeSpan) {
+      activeSpan.setStatus({ code: 2, message: "Database operation failed" });
+      activeSpan.setAttribute("error", true);
+      activeSpan.setAttribute("db.error", "DB_CONNECTION_TIMEOUT");
+    }
+
     return res.status(500).json({
       error: "DatabaseConnectionTimeout",
       message: "PostgreSQL cluster replica timed out during transaction write",
@@ -139,22 +247,17 @@ app.post(["/api/checkout", "/api/orders/checkout"], async (req, res) => {
     });
   }
 
-  // C. Check for general simulated error
-  if (faultConfig.simulateError) {
-    logger.error(`[Fault] Simulated order failure HTTP ${faultConfig.errorCode}`, {
-      traceId: req.traceId,
-      orderId,
-    });
-    return res.status(faultConfig.errorCode).json({
-      error: "OrderProcessingFailed",
-      message: "Simulated order failure",
-      orderId,
-      traceId: req.traceId,
-    });
-  }
+  // Database persistence simulation
+  logger.info("Database operation successful", {
+    traceId: req.traceId,
+    spanId: req.spanId,
+    orderId,
+  });
+
+  const calculatedAmount = totalAmount || (item ? 49.99 * (quantity || 1) : 49.99);
 
   // Step 1: Call Payment Service
-  logger.info(`Invoking payment-service for order ${orderId} (₹${totalAmount || 50})`, {
+  logger.info(`Invoking payment-service for order ${orderId} (₹${calculatedAmount})`, {
     traceId: req.traceId,
     orderId,
   });
@@ -164,8 +267,8 @@ app.post(["/api/checkout", "/api/orders/checkout"], async (req, res) => {
     paymentResult = await callService(`${PAYMENT_SERVICE_URL}/api/pay`, {
       method: "POST",
       body: JSON.stringify({
-        amount: totalAmount || 50,
-        itemName: `Order ${orderId}`,
+        amount: calculatedAmount,
+        itemName: item || `Order ${orderId}`,
         customerId: customerId || "guest",
       }),
     });
@@ -177,9 +280,9 @@ app.post(["/api/checkout", "/api/orders/checkout"], async (req, res) => {
     });
     const failedOrder = {
       orderId,
-      customerId,
-      items: items || [],
-      totalAmount: totalAmount || 50,
+      customerId: customerId || "guest",
+      items: items || [{ name: item || "Standard Item", quantity: quantity || 1 }],
+      totalAmount: calculatedAmount,
       status: "FAILED_PAYMENT_UNREACHABLE",
       error: err.message,
       createdAt: new Date().toISOString(),
@@ -193,7 +296,6 @@ app.post(["/api/checkout", "/api/orders/checkout"], async (req, res) => {
     });
   }
 
-  // If payment service returned an error (e.g., 503 or 500 fault)
   if (!paymentResult.ok) {
     logger.error(
       `Payment failed with status ${paymentResult.status} for ${orderId}`,
@@ -206,9 +308,9 @@ app.post(["/api/checkout", "/api/orders/checkout"], async (req, res) => {
     );
     const failedOrder = {
       orderId,
-      customerId,
-      items: items || [],
-      totalAmount: totalAmount || 50,
+      customerId: customerId || "guest",
+      items: items || [{ name: item || "Standard Item", quantity: quantity || 1 }],
+      totalAmount: calculatedAmount,
       status: "PAYMENT_REJECTED",
       paymentError: paymentResult.data,
       createdAt: new Date().toISOString(),
@@ -228,12 +330,6 @@ app.post(["/api/checkout", "/api/orders/checkout"], async (req, res) => {
       ? paymentResult.data.transactionId
       : `TXN-GEN-${Date.now()}`;
 
-  logger.info(`Payment succeeded (${transactionId}) for ${orderId}`, {
-    traceId: req.traceId,
-    orderId,
-    transactionId,
-  });
-
   // Step 2: Call Notification Service
   logger.info(`Invoking notification-service for order confirmation ${orderId}`, {
     traceId: req.traceId,
@@ -249,7 +345,7 @@ app.post(["/api/checkout", "/api/orders/checkout"], async (req, res) => {
         body: JSON.stringify({
           orderId,
           customerId: customerId || "guest",
-          amount: totalAmount || 50,
+          amount: calculatedAmount,
           transactionId,
           channel: "EMAIL",
         }),
@@ -274,13 +370,12 @@ app.post(["/api/checkout", "/api/orders/checkout"], async (req, res) => {
   const finalOrder = {
     orderId,
     customerId: customerId || "guest",
-    items: items || [],
-    totalAmount: totalAmount || 50,
+    items: items || [{ name: item || "Standard Item", quantity: quantity || 1 }],
+    totalAmount: calculatedAmount,
     paymentMethod: paymentMethod || "CREDIT_CARD",
     shippingAddress: shippingAddress || "123 Telemetry Ave",
     transactionId,
     notificationStatus: notificationResult.ok ? "SENT" : "FAILED",
-    notificationData: notificationResult.data,
     status: "CONFIRMED",
     createdAt: new Date().toISOString(),
   };
@@ -288,8 +383,9 @@ app.post(["/api/checkout", "/api/orders/checkout"], async (req, res) => {
   orders.unshift(finalOrder);
   if (orders.length > 200) orders.pop();
 
-  logger.info(`Order ${orderId} completed successfully!`, {
+  logger.info("Order completed", {
     traceId: req.traceId,
+    spanId: req.spanId,
     orderId,
     transactionId,
   });
@@ -300,9 +396,12 @@ app.post(["/api/checkout", "/api/orders/checkout"], async (req, res) => {
     order: finalOrder,
     traceId: req.traceId,
   });
-});
+};
 
-// 4. List Orders
+// Attach checkout endpoints
+app.post(["/api/checkout", "/api/orders/checkout", "/api/order"], handleOrderCheckout);
+
+// 5. List Orders
 app.get("/api/orders", (req, res) => {
   res.json({
     count: orders.length,
@@ -310,7 +409,7 @@ app.get("/api/orders", (req, res) => {
   });
 });
 
-// 5. Get Order by ID
+// 6. Get Order by ID
 app.get("/api/orders/:id", (req, res) => {
   const order = orders.find((o) => o.orderId === req.params.id);
   if (!order) {
@@ -319,39 +418,10 @@ app.get("/api/orders/:id", (req, res) => {
   res.json(order);
 });
 
-// 6. Fault Injection Handler
-app.post("/api/fault-inject", (req, res) => {
-  const { type, enabled, delayMs, errorCode } = req.body;
-
-  if (type === "delay") {
-    faultConfig.simulateDelay = Boolean(enabled);
-    if (enabled && delayMs) faultConfig.delayMs = delayMs;
-  } else if (type === "dbError") {
-    faultConfig.simulateDbError = Boolean(enabled);
-  } else if (type === "error") {
-    faultConfig.simulateError = Boolean(enabled);
-    if (errorCode) faultConfig.errorCode = errorCode;
-  } else if (type === "reset") {
-    faultConfig = {
-      simulateDelay: false,
-      delayMs: 3000,
-      simulateDbError: false,
-      simulateError: false,
-      errorCode: 500,
-    };
-  }
-
-  logger.info(`[order-service] Fault config updated: ${JSON.stringify(faultConfig)}`);
-
-  res.json({
-    service: "order-service",
-    message: "Fault configuration updated",
-    currentConfig: faultConfig,
-  });
-});
-
 const PORT = parseInt(process.env.PORT || "3002", 10);
 
 app.listen(PORT, "0.0.0.0", () => {
   logger.info(`🚀 Order Service running on http://0.0.0.0:${PORT}`);
+  logger.info(`📊 Prometheus Metrics available at http://0.0.0.0:${PORT}/metrics`);
 });
+

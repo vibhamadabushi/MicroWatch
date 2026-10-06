@@ -45,7 +45,7 @@ for (let i = 20; i >= 0; i--) {
 let localTraces: Trace[] = [];
 
 export const api = {
-  // 1. Fetch Service Health & Topology Status (Focus on payment-service :8002)
+  // 1. Fetch Service Health & Topology Status (payment-service :8002 & order-service :3002)
   async getServicesStatus(): Promise<ServiceHealth[]> {
     let paymentStatus: ServiceHealth = {
       name: "payment-service",
@@ -72,19 +72,42 @@ export const api = {
         paymentStatus.status = "DEGRADED";
       }
     } catch {
-      paymentStatus.status = "UP"; // graceful fallback baseline
+      paymentStatus.status = "UP";
+    }
+
+    let orderStatus: ServiceHealth = {
+      name: "order-service",
+      url: "http://localhost:3002",
+      metricsUrl: "http://localhost:3002/metrics",
+      status: "UP",
+      latencyMs: 12,
+    };
+
+    try {
+      const start = performance.now();
+      const res = await fetch(`/api/orders/health`, {
+        signal: AbortSignal.timeout(1500),
+      }).catch(() =>
+        fetch(`http://localhost:3002/health`, {
+          signal: AbortSignal.timeout(1500),
+        })
+      );
+
+      if (res && res.ok) {
+        orderStatus.status = "UP";
+        orderStatus.latencyMs = Math.round(performance.now() - start);
+      } else {
+        orderStatus.status = "DEGRADED";
+      }
+    } catch {
+      orderStatus.status = "UP";
     }
 
     return [
       paymentStatus,
+      orderStatus,
       {
         name: "api-gateway",
-        url: "Decommissioned (Streamlined)",
-        status: "UP",
-        latencyMs: 0,
-      },
-      {
-        name: "order-service",
         url: "Decommissioned (Streamlined)",
         status: "UP",
         latencyMs: 0,
@@ -98,7 +121,7 @@ export const api = {
     ];
   },
 
-  // 2. Fetch or compute RED Metrics (Scrapes for job="payment-service")
+  // 2. Fetch or compute RED Metrics (Scrapes for job="payment-service" & job="order-service")
   async getREDMetrics(activeFaults: Record<string, any>): Promise<{
     current: REDMetricPoint;
     history: REDMetricPoint[];
@@ -109,11 +132,11 @@ export const api = {
     let status2xx = Math.round(baseRate * 3);
     let status5xx = 0;
 
-    // Scrape real Prometheus metrics for job="payment-service" if available
+    // Scrape real Prometheus metrics if available
     try {
-      const promQueryRate = encodeURIComponent('sum(rate(http_server_request_duration_count{job="payment-service"}[1m]))');
-      const promQueryErr = encodeURIComponent('sum(rate(http_server_request_duration_count{job="payment-service",http_response_status_code=~"5.."}[1m]))');
-      const promQueryP95 = encodeURIComponent('histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_bucket{job="payment-service"}[1m]))) * 1000');
+      const promQueryRate = encodeURIComponent('sum(rate(http_server_request_duration_count[1m]))');
+      const promQueryErr = encodeURIComponent('sum(rate(http_server_request_duration_count{http_response_status_code=~"5.."}[1m]))');
+      const promQueryP95 = encodeURIComponent('histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_bucket[1m]))) * 1000');
 
       const [rateRes, errRes, p95Res] = await Promise.allSettled([
         fetch(`${PROMETHEUS_URL}/api/v1/query?query=${promQueryRate}`, { signal: AbortSignal.timeout(1200) })
@@ -151,10 +174,10 @@ export const api = {
         }
       }
     } catch {
-      // Prometheus query fallback to dynamic synthesis below
+      // Fallback synthesis
     }
 
-    // Dynamic state adjustment reflecting active chaos faults on payment-service
+    // Dynamic state adjustment reflecting active chaos faults
     if (activeFaults["payment-delay"]) {
       baseP95 += 4800 + Math.random() * 400;
     }
@@ -162,6 +185,11 @@ export const api = {
       baseErrorRate = 95 + Math.random() * 5;
       status5xx = Math.round(baseRate * 3 * 0.95);
       status2xx = Math.max(0, Math.round(baseRate * 3 * 0.05));
+    }
+    if (activeFaults["order-db"]) {
+      baseErrorRate = 80 + Math.random() * 10;
+      status5xx = Math.round(baseRate * 3 * 0.8);
+      status2xx = Math.max(0, Math.round(baseRate * 3 * 0.2));
     }
 
     const t = new Date();
@@ -190,7 +218,7 @@ export const api = {
     };
   },
 
-  // 3. Fetch Traces from Jaeger (Specifically queries service name: payment-service)
+  // 3. Fetch Traces from Jaeger
   async getTraces(activeFaults: Record<string, any>): Promise<Trace[]> {
     try {
       const res = await fetch(`${JAEGER_URL}/api/traces?service=payment-service&limit=20`, {
@@ -208,7 +236,7 @@ export const api = {
             const hasErr = jt.spans.some((s: any) =>
               s.tags.some((tag: any) => tag.key === "error" && tag.value === true)
             );
-            const totalDur = Math.max(...jt.spans.map((s: any) => s.duration)) / 1000; // ms
+            const totalDur = Math.max(...jt.spans.map((s: any) => s.duration)) / 1000;
 
             const mappedSpans: Span[] = jt.spans.map((s: any): Span => {
               const tagsObj = (s.tags || []).reduce((acc: any, curr: any) => {
@@ -243,11 +271,8 @@ export const api = {
           return parsed;
         }
       }
-    } catch {
-      // Jaeger query error or no traces yet -> fallback to synthesized realistic traces
-    }
+    } catch {}
 
-    // Generate realistic simulated traces focused on payment-service
     if (localTraces.length === 0) {
       localTraces = generatePaymentTraces(activeFaults);
     } else if (Math.random() > 0.4) {
@@ -258,7 +283,7 @@ export const api = {
     return localTraces;
   },
 
-  // 4. Evaluate SLO Status & Error Budget Burn Rate for payment-service
+  // 4. Evaluate SLO Status & Error Budget Burn Rate
   getSLOStatus(currentMetric: REDMetricPoint): SLOStatus[] {
     const errorBudgetAvailable = Math.max(0, 100 - currentMetric.errorRate * 5);
     const availabilityBurn = currentMetric.errorRate > 5 ? 14.4 : currentMetric.errorRate > 0 ? 2.8 : 0.8;
@@ -267,7 +292,7 @@ export const api = {
 
     return [
       {
-        name: "Payment Availability SLO (99.0%)",
+        name: "Service Availability SLO (99.0%)",
         target: 99.0,
         current: Number((100 - currentMetric.errorRate).toFixed(2)),
         unit: "%",
@@ -283,7 +308,7 @@ export const api = {
             : "Nominal (> 25 Days)",
       },
       {
-        name: "Payment p95 Latency (< 500ms)",
+        name: "p95 Latency SLO (< 500ms)",
         target: 500,
         current: currentMetric.p95,
         unit: "ms",
@@ -301,7 +326,7 @@ export const api = {
     ];
   },
 
-  // 5. Query Incidents and Alert Rules for payment-service
+  // 5. Query Incidents and Alert Rules
   async getIncidents(activeFaults: Record<string, any>, currentMetric: REDMetricPoint): Promise<Incident[]> {
     const list: Incident[] = [];
 
@@ -333,6 +358,20 @@ export const api = {
       });
     }
 
+    if (activeFaults["order-db"]) {
+      list.push({
+        id: "INC-ERR-ORDER-DB",
+        alertName: "HighErrorRate",
+        service: "order-service",
+        severity: "critical",
+        status: "FIRING",
+        startedAt: new Date(Date.now() - 25000).toLocaleTimeString(),
+        summary: "Database connection timeout on order-service",
+        description: "PostgreSQL cluster replica timed out during transaction write. Order placement failing with 500 error.",
+        remediation: "Check PostgreSQL replica node or toggle off database fault via /api/fault/disable on order-service.",
+      });
+    }
+
     // Historical resolved incident
     list.push({
       id: "INC-HIST-01",
@@ -350,15 +389,52 @@ export const api = {
     return list;
   },
 
-  // 6. Inject Fault - Directly targets http://localhost:8002/api/fault/enable & /api/fault/disable
+  // Fetch actual Order Service Database Fault status from backend
+  async getOrderFaultStatus(): Promise<boolean> {
+    try {
+      const res = await fetch("/api/order/fault/status", {
+        signal: AbortSignal.timeout(1500),
+      }).catch(() =>
+        fetch("http://localhost:3002/api/fault/status", {
+          signal: AbortSignal.timeout(1500),
+        })
+      );
+      if (res && res.ok) {
+        const data = await res.json();
+        return Boolean(data.simulateDbError);
+      }
+    } catch {}
+    return false;
+  },
+
+  // 6. Inject Fault - Direct support for both payment-service and order-service
   async injectFault(target: string, body: any): Promise<any> {
     const isEnabling = body.enabled !== false;
     const endpoint = isEnabling ? "enable" : "disable";
+
+    if (target === "order" || target === "order-service") {
+      try {
+        const res = await fetch(`/api/order/fault/${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "database" }),
+        }).catch(() =>
+          fetch(`http://localhost:3002/api/fault/${endpoint}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "database" }),
+          })
+        );
+        if (res && res.ok) return await res.json();
+      } catch {}
+
+      return { target: "order-service", success: true, endpoint, type: "database" };
+    }
+
     const payload = isEnabling
       ? { type: body.type || (target.includes("delay") ? "delay" : "error"), delayMs: body.delayMs || 5000, errorCode: 503 }
       : { type: body.type || (target.includes("delay") ? "delay" : "error") };
 
-    // Try direct call to http://localhost:8002/api/fault/{enable,disable}
     try {
       const res = await fetch(`${DIRECT_PAYMENT_URL}/api/fault/${endpoint}`, {
         method: "POST",
@@ -368,7 +444,6 @@ export const api = {
       if (res.ok) return await res.json();
     } catch {}
 
-    // Fallback via Vite proxy /api/payment/api/fault/{enable,disable}
     try {
       const res = await fetch(`${PAYMENT_PROXY}/api/fault/${endpoint}`, {
         method: "POST",
@@ -381,8 +456,22 @@ export const api = {
     return { target: "payment-service", success: true, endpoint, ...payload };
   },
 
-  // 7. Reset All Faults - Directly calls http://localhost:8002/api/fault/disable with type: "all"
+  // 7. Reset All Faults across services
   async resetAllFaults(): Promise<void> {
+    try {
+      await fetch(`/api/order/fault/disable`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "database" }),
+      }).catch(() =>
+        fetch(`http://localhost:3002/api/fault/disable`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "database" }),
+        })
+      );
+    } catch {}
+
     try {
       await fetch(`${DIRECT_PAYMENT_URL}/api/fault/disable`, {
         method: "POST",
@@ -400,20 +489,21 @@ export const api = {
     }
   },
 
-  // 8. Trigger Traffic Burst - Directly dispatches checkout transactions to payment-service :8002
+  // 8. Trigger Traffic Burst - Dispatches transactions
   async triggerTrafficBurst(count: number = 10): Promise<any> {
     const dispatches = [];
     for (let i = 0; i < count; i++) {
       dispatches.push(
-        fetch(`${DIRECT_PAYMENT_URL}/api/pay`, {
+        fetch(`http://localhost:3002/api/order`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            amount: Number((20 + Math.random() * 80).toFixed(2)),
-            itemName: `Checkout Item #${i + 1}`,
+            item: `Burst Pizza #${i + 1}`,
+            quantity: 1,
+            totalAmount: 49.99,
           }),
         }).catch(() =>
-          fetch(`${PAYMENT_PROXY}/api/pay`, {
+          fetch(`${DIRECT_PAYMENT_URL}/api/pay`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -425,13 +515,13 @@ export const api = {
       );
     }
     await Promise.allSettled(dispatches);
-    return { burstRequested: count, completed: count, target: "payment-service:8002" };
+    return { burstRequested: count, completed: count, target: "order-service & payment-service" };
   },
 
-  // 9. Fetch Logs from Loki (Specifically queries payment-service)
+  // 9. Fetch Logs from Loki
   async getLogs(service?: ServiceName): Promise<LogEntry[]> {
     try {
-      const query = `{service="payment-service"}`;
+      const query = `{service=~"payment-service|order-service"}`;
       const res = await fetch(`${LOKI_URL}/loki/api/v1/query_range?query=${encodeURIComponent(query)}&limit=40`, {
         signal: AbortSignal.timeout(1500),
       }).catch(() =>
@@ -445,19 +535,20 @@ export const api = {
         if (streams && streams.length > 0) {
           const entries: LogEntry[] = [];
           for (const s of streams) {
+            const svcName = s.stream?.service || "payment-service";
             for (const [ts, line] of s.values) {
               try {
                 const parsed = JSON.parse(line);
                 entries.push({
                   timestamp: new Date(Number(ts.substring(0, 13))).toLocaleTimeString(),
-                  service: "payment-service",
+                  service: svcName as ServiceName,
                   level: parsed.level || "info",
                   message: parsed.message || line,
                 });
               } catch {
                 entries.push({
                   timestamp: new Date().toLocaleTimeString(),
-                  service: "payment-service",
+                  service: svcName as ServiceName,
                   level: "info",
                   message: line,
                 });
@@ -471,6 +562,7 @@ export const api = {
 
     return generatePaymentLogs();
   },
+
 };
 
 // Helper: Generate realistic payment-service traces
