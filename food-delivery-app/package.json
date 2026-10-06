@@ -1,0 +1,13 @@
+{
+  "name": "food-delivery-app",
+  "version": "1.0.0",
+  "description": "Standalone Food Delivery Demo Application UI",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}

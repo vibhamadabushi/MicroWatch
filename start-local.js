@@ -8,6 +8,7 @@ const { spawn } = require("child_process");
 const path = require("path");
 
 const services = [
+  { name: "FOOD APP    ", dir: "food-delivery-app", cmd: "node", args: ["index.js"], color: "\x1b[31m", env: { PORT: "3001" } }, // Red
   { name: "PAYMENT     ", dir: "payment-service", cmd: "node", args: ["index.js"], color: "\x1b[32m" }, // Green
   { name: "NOTIFICATION", dir: "notification-service", cmd: "node", args: ["index.js"], color: "\x1b[36m" }, // Cyan
   { name: "ORDER       ", dir: "order-service", cmd: "node", args: ["index.js"], color: "\x1b[35m" }, // Magenta
@@ -55,8 +56,9 @@ services.forEach((svc) => {
 });
 
 console.log("\x1b[32m✅ All services spawning in background.\x1b[0m");
-console.log("📍 API Gateway: [http://localhost:8080]");
-console.log("📍 Dashboard:   [http://localhost:5173]");
+console.log("📍 Food Delivery UI: [http://localhost:3001]");
+console.log("📍 API Gateway:      [http://localhost:8080]");
+console.log("📍 Dashboard:        [http://localhost:5173]");
 console.log("Press Ctrl+C to shut down all processes cleanly.\n");
 
 function shutdown() {

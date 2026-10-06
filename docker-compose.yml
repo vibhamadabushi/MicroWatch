@@ -1,4 +1,17 @@
 services:
+  food-delivery-app:
+    build:
+      context: ./food-delivery-app
+      dockerfile: Dockerfile
+    container_name: microwatch-food-delivery-app
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+    networks:
+      - microwatch-net
+    restart: unless-stopped
+
   payment-service:
     build:
       context: ./payment-service

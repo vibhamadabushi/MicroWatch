@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Food Delivery Application</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            --card-bg: #ffffff;
+            --card-hover-bg: #ffffff;
+            --border-color: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --accent-orange: #f97316;
+            --accent-orange-hover: #ea580c;
+            --accent-orange-light: #fff7ed;
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.06), 0 4px 12px -2px rgba(0, 0, 0, 0.04);
+            --shadow-hover: 0 20px 35px -8px rgba(249, 115, 22, 0.12), 0 8px 16px -4px rgba(0, 0, 0, 0.06);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-gradient);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 960px;
+            margin: 0 auto;
+        }
+
+        .view-section {
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .view-section.active {
+            display: block;
+            opacity: 1;
+        }
+
+        /* Landing Page */
+        .landing-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 64px 32px;
+            text-align: center;
+            box-shadow: var(--shadow);
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--accent-orange-light);
+            color: var(--accent-orange);
+            border: 1px solid #ffedd5;
+            padding: 6px 18px;
+            border-radius: 9999px;
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 24px;
+        }
+
+        h1.title {
+            font-size: 44px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+
+        p.subtitle {
+            font-size: 18px;
+            color: var(--text-secondary);
+            margin-bottom: 40px;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            background: var(--accent-orange);
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 16px;
+            padding: 16px 36px;
+            border-radius: var(--radius-md);
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 14px rgba(249, 115, 22, 0.3);
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-orange-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(249, 115, 22, 0.4);
+        }
+
+        /* Header Bar for Inner Views */
+        .app-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 32px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .brand-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+
+        .btn-back {
+            background: #ffffff;
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            text-decoration: none;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+
+        .btn-back:hover {
+            background: #f8fafc;
+            border-color: #cbd5e1;
+        }
+
+        /* Services Grid */
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 24px;
+        }
+
+        .service-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 32px 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            transition: all 0.25s ease;
+            box-shadow: var(--shadow);
+        }
+
+        .service-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-hover);
+            border-color: #fdba74;
+        }
+
+        .service-icon {
+            font-size: 40px;
+            margin-bottom: 16px;
+            width: 72px;
+            height: 72px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: var(--accent-orange-light);
+            border: 1px solid #ffedd5;
+        }
+
+        .service-name {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+        }
+
+        .service-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+        }
+
+        .btn-open {
+            width: 100%;
+            padding: 11px 18px;
+            background: #f8fafc;
+            color: var(--text-primary);
+            border: 1px solid #cbd5e1;
+            border-radius: var(--radius-md);
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-open:hover {
+            background: var(--accent-orange);
+            border-color: var(--accent-orange);
+            color: #ffffff;
+            box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+        }
+
+        /* Coming Soon Section */
+        .placeholder-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 56px 32px;
+            text-align: center;
+            box-shadow: var(--shadow);
+        }
+
+        .placeholder-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        .placeholder-title {
+            font-size: 28px;
+            font-weight: 800;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+
+        .placeholder-desc {
+            color: var(--text-secondary);
+            max-width: 480px;
+            margin: 0 auto 32px auto;
+            line-height: 1.6;
+        }
+
+        .nav-footer {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+
+        <!-- LANDING PAGE VIEW -->
+        <div id="view-landing" class="view-section active">
+            <div class="landing-card">
+                <div class="hero-badge">🍔 DEMO APPLICATION</div>
+                <h1 class="title">FOOD DELIVERY</h1>
+                <p class="subtitle">Simple food delivery demo application for microservices</p>
+                <button class="btn-primary" onclick="navigateTo('/services')">
+                    GET STARTED &rarr;
+                </button>
+            </div>
+        </div>
+
+        <!-- SERVICES OPTIONS VIEW -->
+        <div id="view-services" class="view-section">
+            <div class="app-header">
+                <div class="brand-logo" onclick="navigateTo('/')">
+                    <span>🍔</span> FOOD DELIVERY
+                </div>
+                <button class="btn-back" onclick="navigateTo('/')">&larr; Home</button>
+            </div>
+
+            <div class="services-grid">
+                <!-- Restaurant -->
+                <div class="service-card">
+                    <div class="service-icon">🍴</div>
+                    <div class="service-name">Restaurant</div>
+                    <div class="service-desc">Restaurant Service</div>
+                    <button class="btn-open" onclick="navigateTo('/restaurant')">OPEN</button>
+                </div>
+
+                <!-- Order -->
+                <div class="service-card">
+                    <div class="service-icon">📦</div>
+                    <div class="service-name">Order</div>
+                    <div class="service-desc">Order Service</div>
+                    <button class="btn-open" onclick="window.location.href='http://localhost:3002'">OPEN</button>
+                </div>
+
+                <!-- Payment -->
+                <div class="service-card">
+                    <div class="service-icon">💳</div>
+                    <div class="service-name">Payment</div>
+                    <div class="service-desc">Payment Service</div>
+                    <button class="btn-open" onclick="window.location.href='http://localhost:8002'">OPEN</button>
+                </div>
+
+                <!-- Notification -->
+                <div class="service-card">
+                    <div class="service-icon">🔔</div>
+                    <div class="service-name">Notification</div>
+                    <div class="service-desc">Notification Service</div>
+                    <button class="btn-open" onclick="navigateTo('/notification')">OPEN</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RESTAURANT PLACEHOLDER VIEW -->
+        <div id="view-restaurant" class="view-section">
+            <div class="app-header">
+                <div class="brand-logo" onclick="navigateTo('/services')">
+                    <span>🍴</span> Restaurant Service
+                </div>
+                <button class="btn-back" onclick="navigateTo('/services')">&larr; Back to Services</button>
+            </div>
+            <div class="placeholder-card">
+                <div class="placeholder-icon">🍴</div>
+                <h2 class="placeholder-title">Restaurant Service — Coming Soon</h2>
+                <p class="placeholder-desc">The Restaurant management interface is under development. Restaurant backend integrations will be enabled in a future release.</p>
+                <button class="btn-primary" onclick="navigateTo('/services')">&larr; Return to Service Options</button>
+            </div>
+        </div>
+
+        <!-- NOTIFICATION PLACEHOLDER VIEW -->
+        <div id="view-notification" class="view-section">
+            <div class="app-header">
+                <div class="brand-logo" onclick="navigateTo('/services')">
+                    <span>🔔</span> Notification Service
+                </div>
+                <button class="btn-back" onclick="navigateTo('/services')">&larr; Back to Services</button>
+            </div>
+            <div class="placeholder-card">
+                <div class="placeholder-icon">🔔</div>
+                <h2 class="placeholder-title">Notification Service — Coming Soon</h2>
+                <p class="placeholder-desc">The Notification Service runs in the background for system alerts and message routing. A dedicated user interface is coming soon.</p>
+                <button class="btn-primary" onclick="navigateTo('/services')">&larr; Return to Service Options</button>
+            </div>
+        </div>
+
+        <div class="nav-footer">
+            Food Delivery Application &bull; Standalone Microservice Demo UI
+        </div>
+
+    </div>
+
+    <script>
+        function renderRoute() {
+            const path = window.location.pathname;
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+
+            if (path === '/services' || path === '/food/services') {
+                document.getElementById('view-services').classList.add('active');
+            } else if (path === '/restaurant' || path === '/food/restaurant') {
+                document.getElementById('view-restaurant').classList.add('active');
+            } else if (path === '/notification' || path === '/food/notification') {
+                document.getElementById('view-notification').classList.add('active');
+            } else {
+                document.getElementById('view-landing').classList.add('active');
+            }
+        }
+
+        function navigateTo(path) {
+            window.history.pushState({}, '', path);
+            renderRoute();
+        }
+
+        window.addEventListener('popstate', renderRoute);
+        document.addEventListener('DOMContentLoaded', renderRoute);
+    </script>
+</body>
+</html>

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Mini Observability Platform for Monitoring and Debugging Microservice-Based Applications",
   "scripts": {
+    "start:food": "node food-delivery-app/index.js",
     "start:payment": "node payment-service/index.js",
     "start:order": "node order-service/index.js",
     "start:notification": "node notification-service/index.js",
