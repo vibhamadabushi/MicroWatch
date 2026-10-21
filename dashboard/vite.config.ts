@@ -3,8 +3,19 @@ import react from "@vitejs/plugin-react";
 
 const paymentServiceUrl = process.env.VITE_PAYMENT_SERVICE_URL || "http://localhost:8002";
 const orderServiceUrl = process.env.VITE_ORDER_SERVICE_URL || "http://localhost:3002";
+const inventoryServiceUrl = process.env.VITE_INVENTORY_SERVICE_URL || "http://localhost:8004";
 
 const proxyConfig = {
+  "/api/order/health": {
+    target: orderServiceUrl,
+    changeOrigin: true,
+    rewrite: () => "/health",
+  },
+  "/api/orders/health": {
+    target: orderServiceUrl,
+    changeOrigin: true,
+    rewrite: () => "/health",
+  },
   "/api/order/fault": {
     target: orderServiceUrl,
     changeOrigin: true,
@@ -16,6 +27,20 @@ const proxyConfig = {
   },
   "/api/orders": {
     target: orderServiceUrl,
+    changeOrigin: true,
+  },
+  "/api/inventory/health": {
+    target: inventoryServiceUrl,
+    changeOrigin: true,
+    rewrite: () => "/health",
+  },
+  "/api/inventory/fault": {
+    target: inventoryServiceUrl,
+    changeOrigin: true,
+    rewrite: (path: string) => path.replace(/^\/api\/inventory\/fault/, "/api/fault"),
+  },
+  "/api/inventory": {
+    target: inventoryServiceUrl,
     changeOrigin: true,
   },
   "/api/payment": {

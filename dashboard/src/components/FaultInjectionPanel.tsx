@@ -6,6 +6,7 @@ import {
   Database,
   Mail,
   Server,
+  Boxes,
 } from "lucide-react";
 
 interface FaultInjectionPanelProps {
@@ -206,7 +207,60 @@ export const FaultInjectionPanel: React.FC<FaultInjectionPanelProps> = ({
           </div>
         </div>
 
-        {/* 3. Notification Service Faults */}
+        {/* 3. Inventory Service - Stock Verification Failure */}
+        <div
+          className={`p-3.5 rounded-xl border transition-all ${
+            activeFaults["inventory-error"]
+              ? "border-amber-300 dark:border-amber-700 bg-amber-50/20 dark:bg-amber-950/20"
+              : "border-slate-200/80 dark:border-slate-700/80 bg-slate-50/40 dark:bg-slate-900/40"
+          }`}
+        >
+          <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-800 mb-2.5">
+            <div className="flex items-center gap-2">
+              <div className="p-1 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400">
+                <Boxes className="w-3.5 h-3.5" />
+              </div>
+              <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                Inventory Service (:8004) - Stock Verification Failure
+              </span>
+            </div>
+            {activeFaults["inventory-error"] ? (
+              <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/60 px-1.5 py-0.5 rounded">
+                Active
+              </span>
+            ) : (
+              <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                Inactive
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-2.5 text-xs">
+            {/* Stock Verification Failure Toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="font-semibold text-red-700 dark:text-red-400 text-[11px] block">
+                  Simulate HTTP 503 Service Unavailable
+                </span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                  Customer Order → Inventory Service → HTTP 503 Service Unavailable (Stock verification fails)
+                </span>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={Boolean(activeFaults["inventory-error"])}
+                  onChange={(e) => onToggleFault("inventory-error", e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-8 h-4 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-red-600"></div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* 4. Notification Service Faults */}
         <div
           className={`p-3.5 rounded-xl border transition-all ${
             activeFaults["notif-delay"] || activeFaults["notif-error"]

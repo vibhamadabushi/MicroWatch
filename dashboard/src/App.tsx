@@ -9,6 +9,7 @@ import { SloMonitor } from "./components/SloMonitor";
 import { IncidentTimeline } from "./components/IncidentTimeline";
 import { FaultInjectionPanel } from "./components/FaultInjectionPanel";
 import { LogsViewer } from "./components/LogsViewer";
+import { InventoryControlCenter } from "./components/InventoryControlCenter";
 import { api } from "./services/api";
 import {
   ServiceHealth,
@@ -62,16 +63,26 @@ const DashboardContent: React.FC = () => {
   // Primary Polling Function
   const fetchAllData = useCallback(async () => {
     try {
-      const [svcData, metricData, traceData, orderDbFault] = await Promise.all([
+      const [svcData, metricData, traceData, orderDbFault, inventoryFault] = await Promise.all([
         api.getServicesStatus(),
         api.getREDMetrics(activeFaults),
         api.getTraces(activeFaults),
         api.getOrderFaultStatus(),
+        api.getInventoryFaultStatus(),
       ]);
 
       setActiveFaults((prev) => {
-        if (Boolean(prev["order-db"]) === orderDbFault) return prev;
-        return { ...prev, "order-db": orderDbFault };
+        let changed = false;
+        const next = { ...prev };
+        if (Boolean(prev["order-db"]) !== orderDbFault) {
+          next["order-db"] = orderDbFault;
+          changed = true;
+        }
+        if (Boolean(prev["inventory-error"]) !== inventoryFault) {
+          next["inventory-error"] = inventoryFault;
+          changed = true;
+        }
+        return changed ? next : prev;
       });
 
       setServices(svcData);
@@ -86,7 +97,7 @@ const DashboardContent: React.FC = () => {
       const calculatedIncidents = await api.getIncidents(activeFaults, metricData.current);
       setIncidents(calculatedIncidents);
 
-      const logData = await api.getLogs();
+      const logData = await api.getLogs(activeFaults);
       setLogs(logData);
     } catch (err) {
       console.error("Polling error in dashboard:", err);
@@ -151,6 +162,9 @@ const DashboardContent: React.FC = () => {
     } else if (key === "notif-error") {
       target = "notification";
       body = { type: "retryError", enabled };
+    } else if (key === "inventory-error") {
+      target = "inventory";
+      body = { type: "serviceUnavailable", enabled };
     } else if (key === "gateway-error") {
       target = "gateway";
       body = { type: "error", enabled, errorCode: 504 };
@@ -252,6 +266,7 @@ const DashboardContent: React.FC = () => {
                     services={services}
                     activeFaults={activeFaults}
                     onOpenFaults={(svc) => setActiveTab("faults")}
+                    onNavigateTab={setActiveTab}
                   />
 
                   {/* Distributed Trace Breakdown */}
@@ -295,7 +310,14 @@ const DashboardContent: React.FC = () => {
                 services={services}
                 activeFaults={activeFaults}
                 onOpenFaults={(svc) => setActiveTab("faults")}
+                onNavigateTab={setActiveTab}
               />
+            </div>
+          )}
+
+          {activeTab === "inventory" && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <InventoryControlCenter onFilterTrace={handleFilterTrace} />
             </div>
           )}
 

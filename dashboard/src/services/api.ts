@@ -7,14 +7,20 @@ import {
   Incident,
   ServiceName,
   LogEntry,
+  InventoryStockResponse,
+  InventoryVerifyRequest,
+  InventoryVerifyResult,
+  InventoryFaultStatus,
 } from "../types";
 
 // Base URLs (prefers Vite proxies to bypass CORS, falls back to direct ports)
 const PAYMENT_PROXY = "/api/payment";
+const INVENTORY_PROXY = "/api/inventory";
 const PROMETHEUS_URL = "/api/prometheus";
 const JAEGER_URL = "/api/jaeger";
 const LOKI_URL = "/api/loki";
 const DIRECT_PAYMENT_URL = "http://localhost:8002";
+const DIRECT_INVENTORY_URL = "http://localhost:8004";
 const DIRECT_PROMETHEUS_URL = "http://localhost:9090";
 const DIRECT_JAEGER_URL = "http://localhost:16686";
 const DIRECT_LOKI_URL = "http://localhost:3100";
@@ -72,7 +78,7 @@ export const api = {
         paymentStatus.status = "DEGRADED";
       }
     } catch {
-      paymentStatus.status = "UP";
+      paymentStatus.status = "DOWN";
     }
 
     let orderStatus: ServiceHealth = {
@@ -100,23 +106,53 @@ export const api = {
         orderStatus.status = "DEGRADED";
       }
     } catch {
-      orderStatus.status = "UP";
+      orderStatus.status = "DOWN";
+    }
+
+    let inventoryStatus: ServiceHealth = {
+      name: "inventory-service",
+      url: "http://localhost:8004",
+      metricsUrl: "http://localhost:8004/metrics",
+      status: "UP",
+      latencyMs: 10,
+    };
+
+    try {
+      const start = performance.now();
+      const res = await fetch(`${INVENTORY_PROXY}/health`, {
+        signal: AbortSignal.timeout(1500),
+      }).catch(() =>
+        fetch(`${DIRECT_INVENTORY_URL}/health`, {
+          signal: AbortSignal.timeout(1500),
+        })
+      );
+
+      if (res && res.ok) {
+        const data = await res.json().catch(() => ({}));
+        inventoryStatus.status = data.status === "DEGRADED" ? "DEGRADED" : "UP";
+        inventoryStatus.latencyMs = Math.round(performance.now() - start);
+      } else {
+        inventoryStatus.status = "DEGRADED";
+      }
+    } catch {
+      inventoryStatus.status = "DOWN";
     }
 
     return [
       paymentStatus,
       orderStatus,
+      inventoryStatus,
       {
         name: "api-gateway",
-        url: "Decommissioned (Streamlined)",
+        url: "http://localhost:8080",
         status: "UP",
-        latencyMs: 0,
+        latencyMs: 5,
       },
       {
         name: "notification-service",
-        url: "Decommissioned (Streamlined)",
+        url: "http://localhost:3003",
         status: "UP",
-        latencyMs: 0,
+        latencyMs: 8,
       },
     ];
   },
@@ -190,6 +226,11 @@ export const api = {
       baseErrorRate = 80 + Math.random() * 10;
       status5xx = Math.round(baseRate * 3 * 0.8);
       status2xx = Math.max(0, Math.round(baseRate * 3 * 0.2));
+    }
+    if (activeFaults["inventory-error"]) {
+      baseErrorRate = 88 + Math.random() * 8;
+      status5xx = Math.round(baseRate * 3 * 0.88);
+      status2xx = Math.max(0, Math.round(baseRate * 3 * 0.12));
     }
 
     const t = new Date();
@@ -372,6 +413,20 @@ export const api = {
       });
     }
 
+    if (activeFaults["inventory-error"]) {
+      list.push({
+        id: "INC-ERR-INVENTORY-503",
+        alertName: "StockVerificationUnavailable",
+        service: "inventory-service",
+        severity: "critical",
+        status: "FIRING",
+        startedAt: new Date(Date.now() - 20000).toLocaleTimeString(),
+        summary: "HTTP 503 Service Unavailable on inventory-service",
+        description: "Stock verification failed with HTTP 503. Downstream order transactions aborted.",
+        remediation: "Inspect inventory service replica or toggle off inventory fault via /api/fault/disable on inventory-service.",
+      });
+    }
+
     // Historical resolved incident
     list.push({
       id: "INC-HIST-01",
@@ -407,6 +462,24 @@ export const api = {
     return false;
   },
 
+  // Fetch actual Inventory Service Fault status from backend
+  async getInventoryFaultStatus(): Promise<boolean> {
+    try {
+      const res = await fetch("/api/inventory/fault/status", {
+        signal: AbortSignal.timeout(1500),
+      }).catch(() =>
+        fetch(`${DIRECT_INVENTORY_URL}/api/fault/status`, {
+          signal: AbortSignal.timeout(1500),
+        })
+      );
+      if (res && res.ok) {
+        const data = await res.json();
+        return Boolean(data.simulateServiceUnavailable);
+      }
+    } catch {}
+    return false;
+  },
+
   // 6. Inject Fault - Direct support for both payment-service and order-service
   async injectFault(target: string, body: any): Promise<any> {
     const isEnabling = body.enabled !== false;
@@ -429,6 +502,25 @@ export const api = {
       } catch {}
 
       return { target: "order-service", success: true, endpoint, type: "database" };
+    }
+
+    if (target === "inventory" || target === "inventory-service") {
+      try {
+        const res = await fetch(`/api/inventory/fault/${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "serviceUnavailable" }),
+        }).catch(() =>
+          fetch(`${DIRECT_INVENTORY_URL}/api/fault/${endpoint}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "serviceUnavailable" }),
+          })
+        );
+        if (res && res.ok) return await res.json();
+      } catch {}
+
+      return { target: "inventory-service", success: true, endpoint, type: "serviceUnavailable" };
     }
 
     const payload = isEnabling
@@ -458,6 +550,18 @@ export const api = {
 
   // 7. Reset All Faults across services
   async resetAllFaults(): Promise<void> {
+    try {
+      await fetch(`/api/inventory/fault/disable`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      }).catch(() =>
+        fetch(`${DIRECT_INVENTORY_URL}/api/fault/disable`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    } catch {}
+
     try {
       await fetch(`/api/order/fault/disable`, {
         method: "POST",
@@ -519,9 +623,9 @@ export const api = {
   },
 
   // 9. Fetch Logs from Loki
-  async getLogs(service?: ServiceName): Promise<LogEntry[]> {
+  async getLogs(activeFaults: Record<string, any> = {}): Promise<LogEntry[]> {
     try {
-      const query = `{service=~"payment-service|order-service"}`;
+      const query = `{service=~"payment-service|order-service|inventory-service"}`;
       const res = await fetch(`${LOKI_URL}/loki/api/v1/query_range?query=${encodeURIComponent(query)}&limit=40`, {
         signal: AbortSignal.timeout(1500),
       }).catch(() =>
@@ -535,7 +639,7 @@ export const api = {
         if (streams && streams.length > 0) {
           const entries: LogEntry[] = [];
           for (const s of streams) {
-            const svcName = s.stream?.service || "payment-service";
+            const svcName = s.stream?.service || "order-service";
             for (const [ts, line] of s.values) {
               try {
                 const parsed = JSON.parse(line);
@@ -560,26 +664,251 @@ export const api = {
       }
     } catch {}
 
-    return generatePaymentLogs();
+    return generateMeshLogs(activeFaults);
   },
 
+  // 10. Inventory Control Center APIs
+  async getInventoryStock(): Promise<InventoryStockResponse> {
+    try {
+      const res = await fetch(`${INVENTORY_PROXY}/stock`, {
+        signal: AbortSignal.timeout(2000),
+      }).catch(() =>
+        fetch(`${DIRECT_INVENTORY_URL}/api/inventory/stock`, {
+          signal: AbortSignal.timeout(2000),
+        })
+      );
+      if (res && res.ok) {
+        return await res.json();
+      }
+    } catch {}
+
+    return {
+      service: "inventory-service",
+      totalProducts: 7,
+      stock: {
+        "PROD-101": { id: "PROD-101", name: "High-Frequency Telemetry Probe", stock: 150 },
+        "PROD-102": { id: "PROD-102", name: "OTel Distributed Span Collector", stock: 120 },
+        "PROD-103": { id: "PROD-103", name: "Prometheus Metric Scraper Node", stock: 80 },
+        "PROD-104": { id: "PROD-104", name: "Loki Log Aggregator Agent", stock: 200 },
+        "ITEM-1": { id: "ITEM-1", name: "MicroWatch Pro Sensor", stock: 350 },
+        "Standard Item": { id: "ITEM-STD", name: "Standard Item", stock: 500 },
+        "Test Pizza": { id: "ITEM-PIZZA", name: "Test Pizza", stock: 100 },
+      },
+    };
+  },
+
+  async verifyInventoryStock(req: InventoryVerifyRequest): Promise<InventoryVerifyResult> {
+    try {
+      let res = await fetch(`${INVENTORY_PROXY}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req),
+        signal: AbortSignal.timeout(4000),
+      }).catch(() => null);
+
+      if (!res) {
+        res = await fetch(`${DIRECT_INVENTORY_URL}/api/inventory/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(req),
+          signal: AbortSignal.timeout(4000),
+        }).catch(() => null);
+      }
+
+      if (res) {
+        const data = await res.json().catch(() => ({}));
+        return {
+          success: res.ok,
+          verified: Boolean(data.verified),
+          statusCode: res.status,
+          message: data.message || (res.ok ? "Product stock verified successfully" : "Stock verification failed"),
+          orderId: data.orderId || req.orderId,
+          traceId: data.traceId,
+          items: data.items,
+          details: data.details,
+          error: data.error,
+          timestamp: data.timestamp || new Date().toISOString(),
+        };
+      }
+    } catch (err) {
+      return {
+        success: false,
+        statusCode: 500,
+        message: err.message || "Failed to reach inventory service",
+        orderId: req.orderId,
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    return {
+      success: false,
+      statusCode: 503,
+      message: "Connection to inventory-service timed out",
+      orderId: req.orderId,
+      timestamp: new Date().toISOString(),
+    };
+  },
+
+  async getInventoryFaultConfig(): Promise<InventoryFaultStatus> {
+    try {
+      const res = await fetch("/api/inventory/fault/status", {
+        signal: AbortSignal.timeout(1500),
+      }).catch(() =>
+        fetch(`${DIRECT_INVENTORY_URL}/api/fault/status`, {
+          signal: AbortSignal.timeout(1500),
+        })
+      );
+      if (res && res.ok) {
+        const data = await res.json();
+        return {
+          simulateServiceUnavailable: Boolean(data.simulateServiceUnavailable),
+          errorCode: data.errorCode || 503,
+        };
+      }
+    } catch {}
+    return { simulateServiceUnavailable: false, errorCode: 503 };
+  },
+
+  async toggleInventoryFault(enable: boolean): Promise<any> {
+    const endpoint = enable ? "enable" : "disable";
+    try {
+      const res = await fetch(`/api/inventory/fault/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "serviceUnavailable" }),
+      }).catch(() =>
+        fetch(`${DIRECT_INVENTORY_URL}/api/fault/${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "serviceUnavailable" }),
+        })
+      );
+      if (res && res.ok) {
+        return await res.json();
+      }
+    } catch {}
+    return { success: true, simulateServiceUnavailable: enable };
+  },
 };
 
-// Helper: Generate realistic payment-service traces
+// Helper: Generate realistic distributed traces across the e-commerce mesh
 function generateSinglePaymentTrace(activeFaults: Record<string, any>): Trace {
   const traceId = Math.random().toString(16).substring(2, 18) + Math.random().toString(16).substring(2, 18);
+  const rootSpanId = "span-order-root-" + Math.random().toString(16).substring(2, 8);
+  const hasInventoryError = Boolean(activeFaults["inventory-error"]);
   const hasPaymentError = Boolean(activeFaults["payment-error"]);
   const hasPaymentDelay = Boolean(activeFaults["payment-delay"]);
-  const duration = hasPaymentDelay ? 5100 + Math.random() * 400 : 120 + Math.random() * 80;
+  const hasOrderDbError = Boolean(activeFaults["order-db"]);
 
-  const spans: Span[] = [
-    {
+  const spans: Span[] = [];
+
+  if (hasInventoryError) {
+    // Inventory failure aborts checkout immediately at stock check
+    spans.push(
+      {
+        traceId,
+        spanId: rootSpanId,
+        operationName: "POST /api/checkout",
+        serviceName: "order-service",
+        startTime: 0,
+        duration: 38,
+        statusCode: 503,
+        hasError: true,
+        tags: {
+          "http.method": "POST",
+          "http.target": "/api/checkout",
+          "http.status_code": 503,
+          "service.name": "order-service",
+          error: true,
+          "inventory.error": "SERVICE_UNAVAILABLE",
+        },
+      },
+      {
+        traceId,
+        spanId: "span-inv-" + Math.random().toString(16).substring(2, 8),
+        parentSpanId: rootSpanId,
+        operationName: "POST /api/inventory/verify",
+        serviceName: "inventory-service",
+        startTime: 5,
+        duration: 32,
+        statusCode: 503,
+        hasError: true,
+        tags: {
+          "http.method": "POST",
+          "http.target": "/api/inventory/verify",
+          "http.status_code": 503,
+          "service.name": "inventory-service",
+          "inventory.error": "SERVICE_UNAVAILABLE",
+          "inventory.stock_verified": false,
+          error: true,
+        },
+      }
+    );
+
+    return {
       traceId,
-      spanId: "span-pay-root",
+      rootService: "order-service",
+      rootOperation: "POST /api/checkout",
+      startTime: new Date().toLocaleTimeString(),
+      totalDurationMs: 38,
+      spanCount: spans.length,
+      hasError: true,
+      spans,
+    };
+  }
+
+  // Normal flow or downstream failure
+  const payDuration = hasPaymentDelay ? 5100 + Math.random() * 400 : 90 + Math.random() * 30;
+  const totalDuration = hasOrderDbError ? 45 : Number((45 + payDuration + 35).toFixed(1));
+
+  spans.push({
+    traceId,
+    spanId: rootSpanId,
+    operationName: "POST /api/checkout",
+    serviceName: "order-service",
+    startTime: 0,
+    duration: totalDuration,
+    statusCode: hasOrderDbError ? 500 : hasPaymentError ? 503 : 200,
+    hasError: hasOrderDbError || hasPaymentError,
+    tags: {
+      "http.method": "POST",
+      "http.target": "/api/checkout",
+      "http.status_code": hasOrderDbError ? 500 : hasPaymentError ? 503 : 200,
+      "service.name": "order-service",
+      error: hasOrderDbError || hasPaymentError ? true : undefined,
+    },
+  });
+
+  if (!hasOrderDbError) {
+    // 1. Inventory stock check succeeded
+    spans.push({
+      traceId,
+      spanId: "span-inv-" + Math.random().toString(16).substring(2, 8),
+      parentSpanId: rootSpanId,
+      operationName: "POST /api/inventory/verify",
+      serviceName: "inventory-service",
+      startTime: 10,
+      duration: 35,
+      statusCode: 200,
+      hasError: false,
+      tags: {
+        "http.method": "POST",
+        "http.target": "/api/inventory/verify",
+        "http.status_code": 200,
+        "inventory.verified": true,
+        "service.name": "inventory-service",
+      },
+    });
+
+    // 2. Payment Service invocation
+    spans.push({
+      traceId,
+      spanId: "span-pay-" + Math.random().toString(16).substring(2, 8),
+      parentSpanId: rootSpanId,
       operationName: "POST /api/pay",
       serviceName: "payment-service",
-      startTime: 0,
-      duration: Number(duration.toFixed(1)),
+      startTime: 48,
+      duration: Number(payDuration.toFixed(1)),
       statusCode: hasPaymentError ? 503 : 200,
       hasError: hasPaymentError,
       tags: {
@@ -587,37 +916,42 @@ function generateSinglePaymentTrace(activeFaults: Record<string, any>): Trace {
         "http.target": "/api/pay",
         "http.status_code": hasPaymentError ? 503 : 200,
         "payment.amount": 49.99,
-        "payment.currency": "INR",
         "service.name": "payment-service",
         error: hasPaymentError ? true : undefined,
       },
-    },
-    {
-      traceId,
-      spanId: "span-pay-gateway-call",
-      parentSpanId: "span-pay-root",
-      operationName: "Acquirer:AuthorizePayment",
-      serviceName: "payment-service",
-      startTime: 15,
-      duration: Number((duration - 20).toFixed(1)),
-      statusCode: hasPaymentError ? 503 : 200,
-      hasError: hasPaymentError,
-      tags: {
-        "acquirer.network": "Visa/Mastercard",
-        "acquirer.status": hasPaymentError ? "UNAVAILABLE" : "AUTHORIZED",
-        error: hasPaymentError ? "PaymentGatewayUnavailable" : undefined,
-      },
-    },
-  ];
+    });
+
+    // 3. Notification Service invocation (only if payment succeeded)
+    if (!hasPaymentError) {
+      spans.push({
+        traceId,
+        spanId: "span-notif-" + Math.random().toString(16).substring(2, 8),
+        parentSpanId: rootSpanId,
+        operationName: "POST /api/notify",
+        serviceName: "notification-service",
+        startTime: 48 + Number(payDuration.toFixed(1)) + 5,
+        duration: 30,
+        statusCode: 200,
+        hasError: false,
+        tags: {
+          "http.method": "POST",
+          "http.target": "/api/notify",
+          "http.status_code": 200,
+          "notification.channel": "EMAIL",
+          "service.name": "notification-service",
+        },
+      });
+    }
+  }
 
   return {
     traceId,
-    rootService: "payment-service",
-    rootOperation: "POST /api/pay",
+    rootService: "order-service",
+    rootOperation: "POST /api/checkout",
     startTime: new Date().toLocaleTimeString(),
-    totalDurationMs: Number(duration.toFixed(1)),
+    totalDurationMs: totalDuration,
     spanCount: spans.length,
-    hasError: hasPaymentError,
+    hasError: hasOrderDbError || hasPaymentError,
     spans,
   };
 }
@@ -630,20 +964,44 @@ function generatePaymentTraces(activeFaults: Record<string, any>): Trace[] {
   return traces;
 }
 
-function generatePaymentLogs(): LogEntry[] {
+function generateMeshLogs(activeFaults: Record<string, any> = {}): LogEntry[] {
   const now = new Date();
-  return [
-    {
+  const list: LogEntry[] = [];
+
+  if (activeFaults["inventory-error"]) {
+    list.push({
       timestamp: now.toLocaleTimeString(),
-      service: "payment-service",
+      service: "inventory-service",
+      level: "error",
+      message: "ERROR Inventory service unavailable",
+    });
+    list.push({
+      timestamp: new Date(now.getTime() - 500).toLocaleTimeString(),
+      service: "order-service",
+      level: "error",
+      message: "Stock verification failed with status 503 for order ORD-B481",
+    });
+  } else {
+    list.push({
+      timestamp: now.toLocaleTimeString(),
+      service: "inventory-service",
       level: "info",
-      message: "Payment Service initialized with OpenTelemetry & Loki transport on port 8002",
-    },
+      message: "Stock verification successful for order ORD-1094 (PROD-101, qty: 1)",
+    });
+  }
+
+  list.push(
     {
       timestamp: new Date(now.getTime() - 2000).toLocaleTimeString(),
-      service: "payment-service",
+      service: "inventory-service",
       level: "info",
-      message: "Prometheus scraping endpoint active on /metrics",
+      message: "Inventory Service active on port 8004 with Prometheus metrics on /metrics",
+    },
+    {
+      timestamp: new Date(now.getTime() - 3500).toLocaleTimeString(),
+      service: "order-service",
+      level: "info",
+      message: "Order Service transaction coordinator listening on port 3002",
     },
     {
       timestamp: new Date(now.getTime() - 5000).toLocaleTimeString(),
@@ -656,6 +1014,8 @@ function generatePaymentLogs(): LogEntry[] {
       service: "payment-service",
       level: "info",
       message: "Payment processed successfully for Txn: TXN-B82C (200 OK)",
-    },
-  ];
+    }
+  );
+
+  return list;
 }

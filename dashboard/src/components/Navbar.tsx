@@ -77,7 +77,8 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: "all", label: "All Services (Mesh)" },
     { id: "api-gateway", label: "API Gateway (:8080)" },
     { id: "order-service", label: "Order Service (:3002)" },
-    { id: "payment-service", label: "Payment Service (:3000)" },
+    { id: "payment-service", label: "Payment Service (:8002)" },
+    { id: "inventory-service", label: "Inventory Service (:8004)" },
     { id: "notification-service", label: "Notification Service (:3003)" },
   ];
 

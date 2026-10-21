@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   XCircle,
   Sliders,
+  Boxes,
 } from "lucide-react";
 import { ServiceHealth, ServiceName } from "../types";
 
@@ -13,6 +14,7 @@ interface TopologyGraphProps {
   services: ServiceHealth[];
   activeFaults: Record<string, any>;
   onOpenFaults?: (svc: string) => void;
+  onNavigateTab?: (tab: string) => void;
   compact?: boolean;
 }
 
@@ -20,6 +22,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   services,
   activeFaults,
   onOpenFaults,
+  onNavigateTab,
   compact = false,
 }) => {
   const [selectedNode, setSelectedNode] = useState<ServiceName | null>(null);
@@ -31,14 +34,25 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
 
   const getNodeMetrics = (name: ServiceName) => {
     const s = services.find((x) => x.name === name);
+    const ports: Record<string, { port: number | string; metricsPort: number | string }> = {
+      "payment-service": { port: 8002, metricsPort: 8002 },
+      "order-service": { port: 3002, metricsPort: 3002 },
+      "inventory-service": { port: 8004, metricsPort: 8004 },
+      "notification-service": { port: 3003, metricsPort: 9467 },
+      "api-gateway": { port: 8080, metricsPort: 9466 },
+    };
+    const p = ports[name] || { port: "-", metricsPort: "-" };
     return {
       latency: s?.latencyMs || 15,
-      port: name === "payment-service" ? 8002 : "-",
-      metricsPort: name === "payment-service" ? 8002 : "-",
+      port: p.port,
+      metricsPort: p.metricsPort,
     };
   };
 
   const isDegradedOrFaulty = (name: ServiceName) => {
+    if (name === "inventory-service" && activeFaults["inventory-error"]) {
+      return "CRITICAL";
+    }
     if (name === "payment-service" && (activeFaults["payment-delay"] || activeFaults["payment-error"])) {
       return activeFaults["payment-error"] ? "CRITICAL" : "DEGRADED";
     }
@@ -48,37 +62,40 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
     if (name === "notification-service" && (activeFaults["notif-delay"] || activeFaults["notif-error"])) {
       return "DEGRADED";
     }
-    return getServiceStatus(name) === "DOWN" ? "CRITICAL" : "HEALTHY";
+    const status = getServiceStatus(name);
+    if (status === "DOWN") return "CRITICAL";
+    if (status === "DEGRADED") return "DEGRADED";
+    return "HEALTHY";
   };
 
   const nodes = [
     {
-      id: "payment-service" as ServiceName,
-      label: "Payment Service",
-      sublabel: "Primary Active Service (:8002)",
-      x: 300,
-      y: 90,
-    },
-    {
-      id: "api-gateway" as ServiceName,
-      label: "API Gateway",
-      sublabel: "Decommissioned (Streamlined)",
-      x: 135,
-      y: 280,
-    },
-    {
       id: "order-service" as ServiceName,
       label: "Order Service",
-      sublabel: "Decommissioned (Streamlined)",
+      sublabel: "Transaction Coordinator (:3002)",
       x: 300,
-      y: 280,
+      y: 75,
+    },
+    {
+      id: "inventory-service" as ServiceName,
+      label: "Inventory Service",
+      sublabel: "Stock Verification (:8004)",
+      x: 110,
+      y: 265,
+    },
+    {
+      id: "payment-service" as ServiceName,
+      label: "Payment Service",
+      sublabel: "Settlement Gateway (:8002)",
+      x: 300,
+      y: 265,
     },
     {
       id: "notification-service" as ServiceName,
       label: "Notification Service",
-      sublabel: "Decommissioned (Streamlined)",
-      x: 465,
-      y: 280,
+      sublabel: "Async Queue Dispatch (:3003)",
+      x: 490,
+      y: 265,
     },
   ];
 
@@ -122,9 +139,16 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
           preserveAspectRatio="xMidYMid meet"
         >
           <defs>
-            <linearGradient id="edgeGradGateway" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#2563eb" />
-              <stop offset="100%" stopColor="#4f46e5" />
+            <linearGradient id="edgeGradInv" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#4f46e5" />
+              <stop
+                offset="100%"
+                stopColor={
+                  activeFaults["inventory-error"]
+                    ? "#ef4444"
+                    : "#10b981"
+                }
+              />
             </linearGradient>
             <linearGradient id="edgeGradPay" x1="0%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%" stopColor="#4f46e5" />
@@ -144,7 +168,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
               <stop
                 offset="100%"
                 stopColor={
-                  activeFaults["notif-delay"]
+                  activeFaults["notif-delay"] || activeFaults["notif-error"]
                     ? "#f59e0b"
                     : "#06b6d4"
                 }
@@ -152,19 +176,19 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
             </linearGradient>
           </defs>
 
-          {/* Gateway -> Order */}
+          {/* Order -> Inventory (Stock Verification) */}
           <path
-            d="M 300 85 L 300 145"
+            d="M 260 115 C 260 180, 110 180, 110 220"
             fill="none"
-            stroke="url(#edgeGradGateway)"
+            stroke="url(#edgeGradInv)"
             strokeWidth="2.5"
             strokeDasharray="6 4"
             className="animate-flow-dash"
           />
 
-          {/* Order -> Payment */}
+          {/* Order -> Payment (Settlement) */}
           <path
-            d="M 270 205 C 270 245, 145 245, 145 280"
+            d="M 300 115 L 300 220"
             fill="none"
             stroke="url(#edgeGradPay)"
             strokeWidth="2.5"
@@ -172,9 +196,9 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
             className="animate-flow-dash"
           />
 
-          {/* Order -> Notification */}
+          {/* Order -> Notification (Queue Dispatch) */}
           <path
-            d="M 330 205 C 330 245, 455 245, 455 280"
+            d="M 340 115 C 340 180, 490 180, 490 220"
             fill="none"
             stroke="url(#edgeGradNotif)"
             strokeWidth="2.5"
@@ -284,6 +308,15 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {selectedNode === "inventory-service" && onNavigateTab && (
+              <button
+                onClick={() => onNavigateTab("inventory")}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm"
+              >
+                <Boxes className="w-3.5 h-3.5" />
+                <span>Inventory Control Center</span>
+              </button>
+            )}
             {onOpenFaults && (
               <button
                 onClick={() => onOpenFaults(selectedNode)}

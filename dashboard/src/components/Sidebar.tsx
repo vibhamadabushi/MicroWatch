@@ -2,6 +2,7 @@ import React from "react";
 import {
   Activity,
   Layers,
+  Boxes,
   ListTree,
   ShieldCheck,
   ShieldAlert,
@@ -37,6 +38,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: "Topology",
       icon: Layers,
       tooltip: "Microservice Dependency Mesh",
+    },
+    {
+      id: "inventory",
+      label: "Inventory",
+      icon: Boxes,
+      tooltip: "Inventory Control Center (:8004)",
     },
     {
       id: "traces",
@@ -177,7 +184,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <div className="hidden md:flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-mono pt-1 border-t border-slate-200/60 dark:border-slate-800">
           <span>Ports</span>
-          <span className="text-slate-600 dark:text-slate-400">:8080 :3000 :3002</span>
+          <span className="text-slate-600 dark:text-slate-400">:8004 :3002 :8002</span>
         </div>
 
         {/* Mobile Status Dot */}

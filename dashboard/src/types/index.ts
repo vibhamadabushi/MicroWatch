@@ -2,7 +2,8 @@ export type ServiceName =
   | "api-gateway"
   | "order-service"
   | "payment-service"
-  | "notification-service";
+  | "notification-service"
+  | "inventory-service";
 
 export type ServiceStatus = "UP" | "DEGRADED" | "DOWN";
 
@@ -88,6 +89,7 @@ export interface FaultConfig {
   simulateError: boolean;
   errorCode: number;
   simulateDbError?: boolean;
+  simulateServiceUnavailable?: boolean;
   simulateQueueDelay?: boolean;
   queueLatencyMs?: number;
   simulateRetryError?: boolean;
@@ -100,4 +102,47 @@ export interface LogEntry {
   message: string;
   traceId?: string;
   meta?: Record<string, any>;
+}
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  stock: number;
+  category?: string;
+}
+
+export interface InventoryStockResponse {
+  service: string;
+  totalProducts: number;
+  stock: Record<string, { id: string; name: string; stock: number }>;
+}
+
+export interface InventoryVerifyRequest {
+  item: string;
+  quantity: number;
+  orderId?: string;
+  customerId?: string;
+}
+
+export interface InventoryVerifyResult {
+  success: boolean;
+  verified?: boolean;
+  statusCode: number;
+  message: string;
+  orderId?: string;
+  traceId?: string;
+  items?: Array<{
+    item: string;
+    quantity: number;
+    availableStock: number;
+    status: string;
+  }>;
+  details?: any;
+  error?: string;
+  timestamp: string;
+}
+
+export interface InventoryFaultStatus {
+  simulateServiceUnavailable: boolean;
+  errorCode: number;
 }
