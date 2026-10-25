@@ -119,7 +119,7 @@ async function injectFault(target, body) {
 
 async function resetAllFaults() {
   console.log(`\n\n🧹 [Drill Cleanup] Resetting all faults...`);
-  for (const target of ["gateway", "order", "payment", "notification"]) {
+  for (const target of ["gateway", "order", "payment", "notification", "inventory"]) {
     try {
       await fetch(`${GATEWAY_URL}/api/fault-inject`, {
         method: "POST",
@@ -159,6 +159,8 @@ async function run() {
     await injectFault("order", { type: "dbError", enabled: true });
   } else if (DRILL_MODE === "notif-retry") {
     await injectFault("notification", { type: "retryError", enabled: true });
+  } else if (DRILL_MODE === "inventory-error") {
+    await injectFault("inventory", { type: "serviceUnavailable", enabled: true });
   }
 
   console.log("\n🚀 Starting traffic generation. Press Ctrl+C to stop...\n");

@@ -1,0 +1,99 @@
+[
+  {
+    "id": "adj-1792822871782-wrn2",
+    "sku": "PIZZA-9525",
+    "productName": "Gourmet Truffle & Burrata Pizza",
+    "previousQuantity": 51,
+    "newQuantity": 0,
+    "change": -51,
+    "reason": "Product deleted from catalog",
+    "orderId": null,
+    "timestamp": "2026-10-24T06:21:11.782Z"
+  },
+  {
+    "id": "adj-1792822871697-o33k",
+    "sku": "PIZZA-9525",
+    "productName": "Gourmet Truffle & Burrata Pizza",
+    "previousQuantity": 49,
+    "newQuantity": 51,
+    "change": 2,
+    "reason": "Rollback: Test suite cleanup (ORD-IDEMP-1792822871673)",
+    "orderId": "ORD-IDEMP-1792822871673",
+    "timestamp": "2026-10-24T06:21:11.697Z"
+  },
+  {
+    "id": "adj-1792822871646-tw9c",
+    "sku": "PIZZA-9525",
+    "productName": "Gourmet Truffle & Burrata Pizza",
+    "previousQuantity": 46,
+    "newQuantity": 51,
+    "change": 5,
+    "reason": "Rollback: Payment rejected (ORD-940C46F4)",
+    "orderId": "ORD-940C46F4",
+    "timestamp": "2026-10-24T06:21:11.646Z"
+  },
+  {
+    "id": "adj-1792822871540-5sic",
+    "sku": "PIZZA-9525",
+    "productName": "Gourmet Truffle & Burrata Pizza",
+    "previousQuantity": 55,
+    "newQuantity": 51,
+    "change": -4,
+    "reason": "Order fulfillment (ORD-8A1BD7F5)",
+    "orderId": "ORD-8A1BD7F5",
+    "timestamp": "2026-10-24T06:21:11.540Z"
+  },
+  {
+    "id": "adj-1792822869668-95mz",
+    "sku": "PIZZA-9525",
+    "productName": "Gourmet Truffle & Burrata Pizza",
+    "previousQuantity": 70,
+    "newQuantity": 55,
+    "change": -15,
+    "reason": "Event catering order deduction",
+    "orderId": null,
+    "timestamp": "2026-10-24T06:21:09.668Z"
+  },
+  {
+    "id": "adj-1792822869651-8gti",
+    "sku": "PIZZA-9525",
+    "productName": "Gourmet Truffle & Burrata Pizza",
+    "previousQuantity": 50,
+    "newQuantity": 70,
+    "change": 20,
+    "reason": "Kitchen batch restock #102",
+    "orderId": null,
+    "timestamp": "2026-10-24T06:21:09.651Z"
+  },
+  {
+    "id": "adj-1792822869580-761o",
+    "sku": "PIZZA-9525",
+    "productName": "Gourmet Truffle Pizza",
+    "previousQuantity": 0,
+    "newQuantity": 50,
+    "change": 50,
+    "reason": "Initial product creation",
+    "orderId": null,
+    "timestamp": "2026-10-24T06:21:09.580Z"
+  },
+  {
+    "id": "adj-seed-01",
+    "sku": "FOOD-101",
+    "productName": "Margherita Artisan Pizza",
+    "previousQuantity": 15,
+    "newQuantity": 8,
+    "change": -7,
+    "reason": "Demo stock deduction (Low stock indicator demo)",
+    "timestamp": "2026-10-24T05:28:08.116Z"
+  },
+  {
+    "id": "adj-seed-02",
+    "sku": "FOOD-102",
+    "productName": "Truffle Tagliatelle",
+    "previousQuantity": 10,
+    "newQuantity": 0,
+    "change": -10,
+    "reason": "Inventory depletion (Out of stock indicator demo)",
+    "timestamp": "2026-10-24T05:28:08.116Z"
+  }
+]

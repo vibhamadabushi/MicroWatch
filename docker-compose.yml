@@ -26,6 +26,21 @@ services:
       - microwatch-net
     restart: unless-stopped
 
+  inventory-service:
+    build:
+      context: ./inventory-service
+      dockerfile: Dockerfile
+    container_name: microwatch-inventory-service
+    ports:
+      - "8004:8004"
+    environment:
+      - PORT=8004
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - LOKI_HOST=http://loki:3100
+    networks:
+      - microwatch-net
+    restart: unless-stopped
+
   order-service:
     build:
       context: ./order-service
@@ -38,6 +53,10 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
       - LOKI_HOST=http://loki:3100
       - PAYMENT_SERVICE_URL=http://payment-service:8002
+      - INVENTORY_SERVICE_URL=http://inventory-service:8004
+    depends_on:
+      - inventory-service
+      - payment-service
     networks:
       - microwatch-net
     restart: unless-stopped
@@ -53,12 +72,14 @@ services:
     environment:
       - VITE_PAYMENT_SERVICE_URL=http://payment-service:8002
       - VITE_ORDER_SERVICE_URL=http://order-service:3002
+      - VITE_INVENTORY_SERVICE_URL=http://inventory-service:8004
       - VITE_PROMETHEUS_URL=http://prometheus:9090
       - VITE_JAEGER_URL=http://jaeger:16686
       - VITE_LOKI_URL=http://loki:3100
     depends_on:
       - payment-service
       - order-service
+      - inventory-service
     networks:
       - microwatch-net
 

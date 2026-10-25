@@ -22,14 +22,20 @@
                         ┌───────────────────────────┐
                         │   Order Service (:3002)   │
                         │ (Transaction Coordinator) │
-                        └──────┬─────────────┬──────┘
-                               │             │
-              W3C Traceparent  │             │  W3C Traceparent
-                               ▼             ▼
-       ┌───────────────────────────┐   ┌───────────────────────────┐
-       │  Payment Service (:3000)  │   │Notification Service(:3003)│
-       │   (Settlement Gateway)    │   │  (Async Queue Dispatch)   │
-       └───────────────────────────┘   └───────────────────────────┘
+                        └──────┬───────┬───────┬────┘
+                               │       │       │
+              W3C Traceparent  │       │       │  W3C Traceparent
+                               ▼       │       ▼
+        ┌───────────────────────────┐  │  ┌───────────────────────────┐
+        │ Inventory Service (:8004) │  │  │Notification Service(:3003)│
+        │   (Stock Verification)    │  │  │  (Async Queue Dispatch)   │
+        └───────────────────────────┘  │  └───────────────────────────┘
+                                       │
+                                       ▼  W3C Traceparent
+                        ┌───────────────────────────┐
+                        │  Payment Service (:8002)  │
+                        │   (Settlement Gateway)    │
+                        └───────────────────────────┘
 ```
 
 ### 1. User Request & Ingress Ingestion
@@ -41,12 +47,15 @@
 1. **API Gateway $\rightarrow$ Order Service (`:3002` / `:8001`):**
    - The Gateway forwards the payload to `POST /api/orders/checkout`.
    - Propagates the HTTP header: `traceparent: 00-<trace_id>-<span_id>-01`.
-2. **Order Service $\rightarrow$ Payment Service (`:3000` / `:8002`):**
-   - The Order Service calls `POST /api/pay` to authorize transactions.
+2. **Order Service $\rightarrow$ Inventory Service (`:8004`):**
+   - The Order Service initiates `POST /api/inventory/verify` to verify stock for cart items.
+   - If inventory returns HTTP 503 (injected fault) or stock is depleted (HTTP 422), Order Service immediately aborts the transaction with `FAILED_INVENTORY_UNAVAILABLE` or `OUT_OF_STOCK`, halting downstream payment and notifications.
+3. **Order Service $\rightarrow$ Payment Service (`:8002`):**
+   - Upon successful stock verification, Order Service calls `POST /api/pay` to authorize transactions.
    - If payment fails (e.g. injected 503 or timeout), the transaction aborts and returns an error immediately.
-3. **Order Service $\rightarrow$ Notification Service (`:3003` / `:8003`):**
+4. **Order Service $\rightarrow$ Notification Service (`:8003`):**
    - Upon successful payment authorization, the Order Service initiates `POST /api/notify` to queue confirmation emails.
-4. **Response Aggregation:**
+5. **Response Aggregation:**
    - Order Service compiles the confirmation receipt `ORD-XXXX` and returns HTTP 200/201 back through the API Gateway.
 
 ### 3. The Telemetry Pipeline (The Three Pillars)
@@ -115,7 +124,7 @@ The dashboard continuously tracks RED telemetry according to Google SRE best pra
 │ SLOs      │ 2. Distributed Trace Waterfall          │ 3. Fault Injection Controls      │
 │ Alerts    │    (Span offsets, durations, OTel tags) │    (Payment, Order, Notif delays)│
 │ Chaos     ├─────────────────────────────────────────┴──────────────────────────────────┤
-│ Logs      │ FOOTER: Telemetry Stack Status & Active Ports (:8080, :3002, :3000, :3003) │
+│ Logs      │ FOOTER: Telemetry Stack Status & Active Ports (:8080, :3002, :8002, :3003, :8004) │
 └───────────┴────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -177,7 +186,8 @@ The dashboard continuously tracks RED telemetry according to Google SRE best pra
 9. **Chaos & Fault Injection Lab (`FaultInjectionPanel.tsx`):**
    - Interactive iOS-style toggle switches and range sliders:
      - Payment Service latency delay ($1000\text{ms} - 8000\text{ms}$).
-     - Payment Service HTTP 503 outage.
+     - Inventory Service HTTP 503 stock verification outage.
+      - Payment Service HTTP 503 outage.
      - Order Service database connection timeout.
      - Notification Service queue backlog delay.
      - API Gateway HTTP 504 timeout.

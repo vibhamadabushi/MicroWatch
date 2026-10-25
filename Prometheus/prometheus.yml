@@ -13,3 +13,7 @@ scrape_configs:
   - job_name: "order-service"
     static_configs:
       - targets: ["order-service:3002", "host.docker.internal:3002"]
+
+  - job_name: "inventory-service"
+    static_configs:
+      - targets: ["inventory-service:8004", "host.docker.internal:8004"]

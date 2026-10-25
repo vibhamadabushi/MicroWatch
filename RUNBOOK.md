@@ -93,6 +93,7 @@ docker compose ps
 |---|---|---|
 | **MicroWatch Dashboard** | [http://localhost:3000](http://localhost:3000) | Observability UI with Theme Switcher & SLO Monitors |
 | **Payment Service API** | [http://localhost:8002](http://localhost:8002) | Health check (`/health`) and metrics (`/metrics`) |
+| **Inventory Service API** | [http://localhost:8004](http://localhost:8004) | Stock check (`/api/inventory/verify`), health (`/health`), metrics (`/metrics`), fault injection (`/api/fault/...`) |
 | **Prometheus TSDB** | [http://localhost:9090](http://localhost:9090) | Time-series scraper and PromQL alerting engine |
 | **Jaeger Trace Viewer** | [http://localhost:16686](http://localhost:16686) | Distributed tracing UI and waterfall visualizer |
 | **Grafana Loki Logs** | [http://localhost:3100](http://localhost:3100) | Centralized structured log ingestion API |

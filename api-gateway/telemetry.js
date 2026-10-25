@@ -1,3 +1,7 @@
+const path = require("path");
+const fallbackModules = path.resolve(__dirname, "..", "inventory-service", "node_modules");
+if (!module.paths.includes(fallbackModules)) module.paths.push(fallbackModules);
+
 const { NodeSDK } = require("@opentelemetry/sdk-node");
 const { PrometheusExporter } = require("@opentelemetry/exporter-prometheus");
 const {

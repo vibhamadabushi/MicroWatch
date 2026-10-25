@@ -1,0 +1,92 @@
+{
+  "PROD-101": {
+    "id": "PROD-101",
+    "name": "High-Frequency Telemetry Probe",
+    "category": "Telemetry Hardware",
+    "price": 89.99,
+    "stock": 150,
+    "reorderThreshold": 25,
+    "createdAt": "2026-10-24T05:28:08.112Z",
+    "updatedAt": "2026-10-24T05:28:08.112Z"
+  },
+  "PROD-102": {
+    "id": "PROD-102",
+    "name": "OTel Distributed Span Collector",
+    "category": "Observability Agents",
+    "price": 120,
+    "stock": 120,
+    "reorderThreshold": 20,
+    "createdAt": "2026-10-24T05:28:08.112Z",
+    "updatedAt": "2026-10-24T05:28:08.112Z"
+  },
+  "PROD-103": {
+    "id": "PROD-103",
+    "name": "Prometheus Metric Scraper Node",
+    "category": "Monitoring Nodes",
+    "price": 45.5,
+    "stock": 80,
+    "reorderThreshold": 15,
+    "createdAt": "2026-10-24T05:28:08.112Z",
+    "updatedAt": "2026-10-24T05:28:08.112Z"
+  },
+  "PROD-104": {
+    "id": "PROD-104",
+    "name": "Loki Log Aggregator Agent",
+    "category": "Observability Agents",
+    "price": 65,
+    "stock": 200,
+    "reorderThreshold": 30,
+    "createdAt": "2026-10-24T05:28:08.112Z",
+    "updatedAt": "2026-10-24T05:28:08.112Z"
+  },
+  "ITEM-1": {
+    "id": "ITEM-1",
+    "name": "MicroWatch Pro Sensor",
+    "category": "Sensors & Probes",
+    "price": 49.99,
+    "stock": 350,
+    "reorderThreshold": 50,
+    "createdAt": "2026-10-24T05:28:08.112Z",
+    "updatedAt": "2026-10-24T05:28:08.112Z"
+  },
+  "Standard Item": {
+    "id": "ITEM-STD",
+    "name": "Standard Item",
+    "category": "Demo Catalog",
+    "price": 29.99,
+    "stock": 500,
+    "reorderThreshold": 50,
+    "createdAt": "2026-10-24T05:28:08.112Z",
+    "updatedAt": "2026-10-24T05:28:08.112Z"
+  },
+  "Test Pizza": {
+    "id": "ITEM-PIZZA",
+    "name": "Test Pizza",
+    "category": "Food App Catalog",
+    "price": 18.99,
+    "stock": 100,
+    "reorderThreshold": 20,
+    "createdAt": "2026-10-24T05:28:08.112Z",
+    "updatedAt": "2026-10-24T05:28:08.112Z"
+  },
+  "FOOD-101": {
+    "id": "FOOD-101",
+    "name": "Margherita Artisan Pizza",
+    "category": "Food App Catalog",
+    "price": 14.99,
+    "stock": 8,
+    "reorderThreshold": 10,
+    "createdAt": "2026-10-24T05:28:08.112Z",
+    "updatedAt": "2026-10-24T05:28:08.112Z"
+  },
+  "FOOD-102": {
+    "id": "FOOD-102",
+    "name": "Truffle Tagliatelle",
+    "category": "Food App Catalog",
+    "price": 24.5,
+    "stock": 0,
+    "reorderThreshold": 15,
+    "createdAt": "2026-10-24T05:28:08.112Z",
+    "updatedAt": "2026-10-24T05:28:08.112Z"
+  }
+}

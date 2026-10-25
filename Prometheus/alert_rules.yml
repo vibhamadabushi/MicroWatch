@@ -38,3 +38,23 @@ groups:
         annotations:
           summary: "Service instance {{ $labels.job }} is down"
           description: "Prometheus cannot scrape endpoint {{ $labels.instance }} for service {{ $labels.job }}."
+
+      - alert: InventoryServiceUnavailable
+        expr: |
+          sum by (job) (rate(inventory_requests_failed_total{reason="service_unavailable"}[1m])) > 0
+        for: 10s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Inventory stock verification service unavailable"
+          description: "Inventory stock verification requests are failing with HTTP 503 on service {{ $labels.job }}."
+
+      - alert: HighInventoryStockRejections
+        expr: |
+          sum(rate(inventory_stock_rejections_total[1m])) > 0.2
+        for: 15s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated inventory stock rejections"
+          description: "Multiple customer orders are failing due to insufficient product inventory."

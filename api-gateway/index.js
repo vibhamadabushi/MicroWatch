@@ -1,3 +1,7 @@
+const path = require("path");
+const fallbackModules = path.resolve(__dirname, "..", "inventory-service", "node_modules");
+if (!module.paths.includes(fallbackModules)) module.paths.push(fallbackModules);
+
 require("./telemetry");
 const logger = require("./logger");
 
@@ -17,6 +21,8 @@ const PAYMENT_SERVICE_URL =
   process.env.PAYMENT_SERVICE_URL || "http://localhost:3000";
 const NOTIFICATION_SERVICE_URL =
   process.env.NOTIFICATION_SERVICE_URL || "http://localhost:3003";
+const INVENTORY_SERVICE_URL =
+  process.env.INVENTORY_SERVICE_URL || "http://localhost:8004";
 
 // Gateway Fault Configuration
 let faultConfig = {
@@ -204,6 +210,28 @@ app.get("/api/orders/:id", async (req, res) => {
   }
 });
 
+// 5.5. Inventory Routes Forwarder
+app.use("/api/inventory", async (req, res) => {
+  try {
+    const subpath = req.url.startsWith("/") ? req.url : `/${req.url}`;
+    const targetUrl = `${INVENTORY_SERVICE_URL}/api/inventory${subpath}`;
+    const options = {
+      method: req.method,
+      headers: { "Content-Type": "application/json" },
+    };
+    if (req.method !== "GET" && req.method !== "HEAD" && req.body && Object.keys(req.body).length > 0) {
+      options.body = JSON.stringify(req.body);
+    }
+    const result = await forwardRequest(targetUrl, options);
+    return res.status(result.status).json(result.data);
+  } catch (err) {
+    return res.status(503).json({
+      error: "Inventory Service Unavailable",
+      message: err.message,
+    });
+  }
+});
+
 // 6. Unified Fault Injection Router
 app.post("/api/fault-inject", async (req, res) => {
   const { target, type, enabled, delayMs, errorCode } = req.body;
@@ -239,6 +267,8 @@ app.post("/api/fault-inject", async (req, res) => {
     targetUrl = `${ORDER_SERVICE_URL}/api/fault-inject`;
   } else if (target === "notification" || target === "notification-service") {
     targetUrl = `${NOTIFICATION_SERVICE_URL}/api/fault-inject`;
+  } else if (target === "inventory" || target === "inventory-service") {
+    targetUrl = `${INVENTORY_SERVICE_URL}/api/fault-inject`;
   }
 
   if (targetUrl) {
@@ -299,6 +329,7 @@ app.get("/api/services/status", async (req, res) => {
     probe("order-service", `${ORDER_SERVICE_URL}/health`, `${ORDER_SERVICE_URL.replace('3002', '9465')}/metrics`),
     probe("payment-service", `${PAYMENT_SERVICE_URL}/health`, `${PAYMENT_SERVICE_URL.replace('3000', '9464')}/metrics`),
     probe("notification-service", `${NOTIFICATION_SERVICE_URL}/health`, `${NOTIFICATION_SERVICE_URL.replace('3003', '9467')}/metrics`),
+    probe("inventory-service", `${INVENTORY_SERVICE_URL}/health`, `${INVENTORY_SERVICE_URL}/metrics`),
   ]);
 
   res.json({

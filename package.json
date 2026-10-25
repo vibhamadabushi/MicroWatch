@@ -5,6 +5,7 @@
   "scripts": {
     "start:food": "node food-delivery-app/index.js",
     "start:payment": "node payment-service/index.js",
+    "start:inventory": "node inventory-service/index.js",
     "start:order": "node order-service/index.js",
     "start:notification": "node notification-service/index.js",
     "start:gateway": "node api-gateway/index.js",
@@ -15,7 +16,8 @@
     "test:burst": "node load-test.js --burst",
     "test:drill:payment-delay": "node load-test.js --drill payment-delay",
     "test:drill:payment-error": "node load-test.js --drill payment-error",
-    "test:drill:order-db": "node load-test.js --drill order-db"
+    "test:drill:order-db": "node load-test.js --drill order-db",
+    "test:drill:inventory-error": "node load-test.js --drill inventory-error"
   },
   "keywords": [
     "observability",

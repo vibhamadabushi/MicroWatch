@@ -10,9 +10,10 @@ const path = require("path");
 const services = [
   { name: "FOOD APP    ", dir: "food-delivery-app", cmd: "node", args: ["index.js"], color: "\x1b[31m", env: { PORT: "3001" } }, // Red
   { name: "PAYMENT     ", dir: "payment-service", cmd: "node", args: ["index.js"], color: "\x1b[32m" }, // Green
-  { name: "NOTIFICATION", dir: "notification-service", cmd: "node", args: ["index.js"], color: "\x1b[36m" }, // Cyan
+  { name: "NOTIFICATION", dir: "notification-service", cmd: "node", args: ["index.js"], color: "\x1b[36m", env: { NODE_PATH: path.resolve(__dirname, "order-service", "node_modules") } }, // Cyan
+  { name: "INVENTORY   ", dir: "inventory-service", cmd: "node", args: ["index.js"], color: "\x1b[35m", env: { PORT: "8004" } }, // Magenta
   { name: "ORDER       ", dir: "order-service", cmd: "node", args: ["index.js"], color: "\x1b[35m" }, // Magenta
-  { name: "GATEWAY     ", dir: "api-gateway", cmd: "node", args: ["index.js"], color: "\x1b[34m", env: { PORT: "8088" } }, // Blue
+  { name: "GATEWAY     ", dir: "api-gateway", cmd: "node", args: ["index.js"], color: "\x1b[34m", env: { PORT: "8088", NODE_PATH: path.resolve(__dirname, "inventory-service", "node_modules") } }, // Blue
   { name: "DASHBOARD   ", dir: "dashboard", cmd: "npx", args: ["vite", "--host", "--port", "5173"], color: "\x1b[33m" }, // Yellow
 ];
 

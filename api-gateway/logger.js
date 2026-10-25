@@ -1,3 +1,7 @@
+const path = require("path");
+const fallbackModules = path.resolve(__dirname, "..", "inventory-service", "node_modules");
+if (!module.paths.includes(fallbackModules)) module.paths.push(fallbackModules);
+
 const winston = require("winston");
 const LokiTransport = require("winston-loki");
 

@@ -15,6 +15,8 @@ const PAYMENT_SERVICE_URL =
   process.env.PAYMENT_SERVICE_URL || "http://localhost:8002";
 const NOTIFICATION_SERVICE_URL =
   process.env.NOTIFICATION_SERVICE_URL || "http://localhost:3003";
+const INVENTORY_SERVICE_URL =
+  process.env.INVENTORY_SERVICE_URL || "http://localhost:8004";
 
 // In-memory order store
 const orders = [];
@@ -256,7 +258,117 @@ const handleOrderCheckout = async (req, res) => {
 
   const calculatedAmount = totalAmount || (item ? 49.99 * (quantity || 1) : 49.99);
 
-  // Step 1: Call Payment Service
+  // Step 1: Call Inventory Service for Stock Verification
+  logger.info(`Invoking inventory-service for stock verification on order ${orderId}`, {
+    traceId: req.traceId,
+    spanId: req.spanId,
+    orderId,
+  });
+
+  let inventoryResult;
+  try {
+    inventoryResult = await callService(
+      `${INVENTORY_SERVICE_URL}/api/inventory/verify`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          orderId,
+          customerId: customerId || "guest",
+          items: items || [{ name: item || "Standard Item", quantity: quantity || 1 }],
+          item: item || "Standard Item",
+          quantity: quantity || 1,
+          reserve: true,
+        }),
+      }
+    );
+  } catch (err) {
+    logger.error(`Inventory service call failed: ${err.message}`, {
+      traceId: req.traceId,
+      spanId: req.spanId,
+      orderId,
+      error: err.message,
+    });
+    const activeSpan = trace.getSpan(context.active());
+    if (activeSpan) {
+      activeSpan.setStatus({ code: 2, message: "Inventory service unreachable" });
+      activeSpan.setAttribute("error", true);
+      activeSpan.setAttribute("inventory.error", "UNREACHABLE");
+    }
+    const failedOrder = {
+      orderId,
+      customerId: customerId || "guest",
+      items: items || [{ name: item || "Standard Item", quantity: quantity || 1 }],
+      totalAmount: calculatedAmount,
+      status: "FAILED_INVENTORY_UNREACHABLE",
+      error: err.message,
+      createdAt: new Date().toISOString(),
+    };
+    orders.unshift(failedOrder);
+    return res.status(503).json({
+      error: "Inventory Service Unavailable",
+      message: "Could not reach Inventory Service for stock verification",
+      orderId,
+      details: err.message,
+      traceId: req.traceId,
+    });
+  }
+
+  if (!inventoryResult.ok) {
+    logger.error(
+      `Stock verification failed with status ${inventoryResult.status} for order ${orderId}`,
+      {
+        traceId: req.traceId,
+        spanId: req.spanId,
+        orderId,
+        inventoryStatus: inventoryResult.status,
+        inventoryData: inventoryResult.data,
+      }
+    );
+
+    const activeSpan = trace.getSpan(context.active());
+    if (activeSpan) {
+      activeSpan.setStatus({
+        code: 2,
+        message: `Stock verification failed: HTTP ${inventoryResult.status}`,
+      });
+      activeSpan.setAttribute("error", true);
+      activeSpan.setAttribute("http.status_code", inventoryResult.status);
+      activeSpan.setAttribute("inventory.status", inventoryResult.status);
+    }
+
+    const failedOrder = {
+      orderId,
+      customerId: customerId || "guest",
+      items: items || [{ name: item || "Standard Item", quantity: quantity || 1 }],
+      totalAmount: calculatedAmount,
+      status:
+        inventoryResult.status === 503
+          ? "FAILED_INVENTORY_UNAVAILABLE"
+          : "FAILED_INVENTORY_CHECK",
+      inventoryError: inventoryResult.data,
+      createdAt: new Date().toISOString(),
+    };
+    orders.unshift(failedOrder);
+
+    return res.status(inventoryResult.status).json({
+      error:
+        inventoryResult.status === 503
+          ? "Inventory Service Unavailable"
+          : "Stock Verification Failed",
+      message: "Order cannot proceed: product stock verification failed",
+      orderId,
+      status: failedOrder.status,
+      upstreamInventory: inventoryResult.data,
+      traceId: req.traceId,
+    });
+  }
+
+  logger.info(`Stock verification successful for order ${orderId}`, {
+    traceId: req.traceId,
+    orderId,
+  });
+
+  // Step 2: Call Payment Service
   logger.info(`Invoking payment-service for order ${orderId} (₹${calculatedAmount})`, {
     traceId: req.traceId,
     orderId,
@@ -287,6 +399,15 @@ const handleOrderCheckout = async (req, res) => {
       error: err.message,
       createdAt: new Date().toISOString(),
     };
+        // Rollback reserved stock
+    try {
+      await callService(`${INVENTORY_SERVICE_URL}/api/inventory/release`, {
+        method: "POST",
+        body: JSON.stringify({ orderId, reason: "Payment service unreachable" }),
+      });
+    } catch (e) {
+      logger.error(`Failed to rollback inventory for order ${orderId}: ${e.message}`);
+    }
     orders.unshift(failedOrder);
     return res.status(502).json({
       error: "Payment Service Unreachable",
@@ -315,6 +436,15 @@ const handleOrderCheckout = async (req, res) => {
       paymentError: paymentResult.data,
       createdAt: new Date().toISOString(),
     };
+        // Rollback reserved stock
+    try {
+      await callService(`${INVENTORY_SERVICE_URL}/api/inventory/release`, {
+        method: "POST",
+        body: JSON.stringify({ orderId, reason: "Payment rejected" }),
+      });
+    } catch (e) {
+      logger.error(`Failed to rollback inventory for order ${orderId}: ${e.message}`);
+    }
     orders.unshift(failedOrder);
     return res.status(paymentResult.status).json({
       error: "Payment Failed",
@@ -330,7 +460,7 @@ const handleOrderCheckout = async (req, res) => {
       ? paymentResult.data.transactionId
       : `TXN-GEN-${Date.now()}`;
 
-  // Step 2: Call Notification Service
+  // Step 3: Call Notification Service
   logger.info(`Invoking notification-service for order confirmation ${orderId}`, {
     traceId: req.traceId,
     orderId,
@@ -364,6 +494,16 @@ const handleOrderCheckout = async (req, res) => {
       status: 503,
       data: { error: "Notification dispatch failed", details: err.message },
     };
+  }
+
+    // Step 4: Confirm inventory reservation
+  try {
+    await callService(`${INVENTORY_SERVICE_URL}/api/inventory/confirm`, {
+      method: "POST",
+      body: JSON.stringify({ orderId }),
+    });
+  } catch (e) {
+    logger.error(`Failed to confirm inventory deduction for order ${orderId}: ${e.message}`);
   }
 
   // Record successful order
